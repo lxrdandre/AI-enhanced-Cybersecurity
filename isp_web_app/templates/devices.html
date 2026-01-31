@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="card shadow-sm">
+  <div class="card-body">
+    <h5 class="card-title">Devices</h5>
+    <div class="table-responsive">
+      <table class="table align-middle">
+        <thead>
+          <tr>
+            <th>Router ID</th>
+            <th>Region</th>
+            <th>Status</th>
+            <th>Last Seen</th>
+            <th>Firmware</th>
+            <th>Anomalies (24h)</th>
+            <th>Model</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in devices %}
+          <tr>
+            <td>{{ d.id }}</td>
+            <td>{{ d.region }}</td>
+            <td>
+              <span class="badge bg-{{ 'success' if d.status=='online' else 'warning' if d.status=='degraded' else 'secondary' }}">
+                {{ d.status }}
+              </span>
+            </td>
+            <td>{{ d.last_seen.strftime('%Y-%m-%d %H:%M UTC') }}</td>
+            <td>{{ d.firmware }}</td>
+            <td>{{ d.anomalies_24h }}</td>
+            <td>{{ d.model_version }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

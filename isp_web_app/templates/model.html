@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row g-4">
+  <div class="col-lg-6">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h5 class="card-title">Global Model</h5>
+        <div class="text-muted small mb-2">Last update: {{ model_info.last_update }}</div>
+        <ul class="list-group list-group-flush">
+          <li class="list-group-item">Version: {{ model_info.version }}</li>
+          <li class="list-group-item">Last Round: {{ model_info.last_round }}</li>
+          <li class="list-group-item">Threshold: {{ model_info.threshold }}</li>
+          <li class="list-group-item">Overall Accuracy: {{ model_info.accuracy }}</li>
+          <li class="list-group-item">Recall: {{ model_info.recall }}</li>
+          <li class="list-group-item">FPR: {{ model_info.fpr }}</li>
+          <li class="list-group-item">Last Update: {{ model_info.last_update }}</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h5 class="card-title">Federated Health</h5>
+        <div class="d-flex justify-content-between mb-2">
+          <span>Client Participation</span>
+          <span>{{ model_info.participation }}%</span>
+        </div>
+        <div class="progress mb-3">
+          <div class="progress-bar" style="width: {{ model_info.participation }}%"></div>
+        </div>
+        <div class="d-flex justify-content-between mb-2">
+          <span>Update Success</span>
+          <span>{{ model_info.update_success }}%</span>
+        </div>
+        <div class="progress">
+          <div class="progress-bar bg-success" style="width: {{ model_info.update_success }}%"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
