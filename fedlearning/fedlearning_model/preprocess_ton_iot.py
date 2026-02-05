@@ -27,6 +27,7 @@ FEATURE_SELECTION = True
 TOP_T_FEATURES = 30
 STABILITY_RUNS = 3
 STABILITY_MIN_COUNT = 2
+NUM_CLIENTS = 5
 
 
 def drop_categorical(df: pd.DataFrame) -> pd.DataFrame:
@@ -111,11 +112,11 @@ def main() -> None:
     test_out = pd.DataFrame(test_features, columns=feature_cols)
     test_out[LABEL_COL] = test_df[LABEL_COL].values
 
-    # Split training (normal only) into 3 device subsets
+    # Split training (normal only) into 5 device subsets
     shuffled_train = train_out.sample(
         frac=1.0, random_state=RANDOM_STATE
     ).reset_index(drop=True)
-    split_indices = np.array_split(np.arange(len(shuffled_train)), 3)
+    split_indices = np.array_split(np.arange(len(shuffled_train)), NUM_CLIENTS)
     device_splits = [
         shuffled_train.iloc[idx].reset_index(drop=True) for idx in split_indices
     ]
@@ -124,9 +125,8 @@ def main() -> None:
     train_path = os.path.join(OUTPUT_DIR, "train_supervised.csv")
     test_path = os.path.join(OUTPUT_DIR, "test_supervised.csv")
     device_paths = [
-        os.path.join(OUTPUT_DIR, "device_1.csv"),
-        os.path.join(OUTPUT_DIR, "device_2.csv"),
-        os.path.join(OUTPUT_DIR, "device_3.csv"),
+        os.path.join(OUTPUT_DIR, f"device_{i}.csv")
+        for i in range(1, NUM_CLIENTS + 1)
     ]
 
     train_out.to_csv(train_path, index=False)
