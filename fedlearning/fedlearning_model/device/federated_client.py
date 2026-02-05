@@ -9,6 +9,7 @@ from pathlib import Path
 from datetime import datetime
 import threading
 import time
+import random
 from typing import Dict, List, Tuple
 
 import flwr as fl
@@ -34,9 +35,14 @@ from federated_common import (
 )
 
 SERVER_ADDRESS = "127.0.0.1:8080"
-CLIENT_ID = int(os.getenv("CLIENT_ID", "2"))
+CLIENT_ID = int(os.getenv("CLIENT_ID", "4"))
 HEARTBEAT_PATH = Path(DATA_DIR) / f"device_{CLIENT_ID + 1}.heartbeat"
 HEARTBEAT_INTERVAL_SEC = 20
+TIME_SCALE = float(os.getenv("ATTACK_TIME_SCALE", "10"))
+ATTACK_BASE_RATE_PER_MIN = float(os.getenv("ATTACK_BASE_RATE_PER_MIN", "6"))
+ATTACK_TICK_SEC = 1
+SEND_DELAY_MIN_SEC = 1
+SEND_DELAY_MAX_SEC = 8
 
 
 def _heartbeat_loop() -> None:
@@ -48,11 +54,23 @@ def _heartbeat_loop() -> None:
         time.sleep(HEARTBEAT_INTERVAL_SEC)
 
 
+def _attack_stream_loop(state: dict) -> None:
+    rng = np.random.default_rng()
+    while True:
+        # Simulate ATTACK_TICK_SEC of real time as TIME_SCALE seconds of virtual time.
+        virtual_seconds = ATTACK_TICK_SEC * TIME_SCALE
+        lam = (ATTACK_BASE_RATE_PER_MIN / 60.0) * virtual_seconds
+        attacks = int(rng.poisson(lam=lam))
+        state["pending_attacks"] += attacks
+        time.sleep(ATTACK_TICK_SEC)
+
+
 class AutoencoderClient(fl.client.NumPyClient):
     def __init__(self, train_file: str, input_dim: int, device: torch.device) -> None:
         self.train_file = train_file
         self.device = device
         self.model = MLPClassifier(input_dim=input_dim).to(device)
+        self._state = {"pending_attacks": 0}
 
         x_train, y_train, _ = load_features(train_file)
         self.x_train = x_train
@@ -73,10 +91,11 @@ class AutoencoderClient(fl.client.NumPyClient):
         for _ in range(LOCAL_EPOCHS):
             epoch_losses.append(train_local(self.model, loader, self.device))
 
-        with torch.no_grad():
-            x_tensor = torch.from_numpy(self.x_train).to(self.device)
-            probs = torch.sigmoid(self.model(x_tensor)).cpu().numpy()
-        anomalies_count = int((probs > THRESHOLD).sum())
+        anomalies_count = int(self._state.get("pending_attacks", 0))
+        self._state["pending_attacks"] = 0
+
+        send_delay = random.uniform(SEND_DELAY_MIN_SEC, SEND_DELAY_MAX_SEC)
+        time.sleep(send_delay)
 
         print("Client update: sending model weights only (no raw data).")
         return (
@@ -87,6 +106,7 @@ class AutoencoderClient(fl.client.NumPyClient):
                 "router_id": f"router-00{CLIENT_ID + 1}",
                 "anomalies_count": anomalies_count,
                 "samples": int(len(self.x_train)),
+                "send_delay_sec": float(send_delay),
             },
         )
 
@@ -102,6 +122,7 @@ def main() -> None:
     HEARTBEAT_PATH.parent.mkdir(parents=True, exist_ok=True)
     HEARTBEAT_PATH.touch()
     threading.Thread(target=_heartbeat_loop, daemon=True).start()
+    threading.Thread(target=_attack_stream_loop, args=(client._state,), daemon=True).start()
 
     fl.client.start_client(
         server_address=SERVER_ADDRESS,
