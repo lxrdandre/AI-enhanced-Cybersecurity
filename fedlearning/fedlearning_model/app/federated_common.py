@@ -13,10 +13,9 @@ from torch.utils.data import DataLoader, TensorDataset
 
 # Paths
 DATA_DIR = os.getenv("FEDLEARNING_DATA_DIR", "/ton-iot-project/fedlearning/data/processed")
+NUM_CLIENTS = 5
 DEVICE_FILES = [
-    os.path.join(DATA_DIR, "device_1.csv"),
-    os.path.join(DATA_DIR, "device_2.csv"),
-    os.path.join(DATA_DIR, "device_3.csv"),
+    os.path.join(DATA_DIR, f"device_{i}.csv") for i in range(1, NUM_CLIENTS + 1)
 ]
 TRAIN_FILE = os.path.join(DATA_DIR, "train_supervised.csv")
 TEST_FILE = os.path.join(DATA_DIR, "test_supervised.csv")
