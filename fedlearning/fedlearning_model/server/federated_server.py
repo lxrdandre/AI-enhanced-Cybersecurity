@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import time
+import math
 
 import flwr as fl
 import torch
@@ -16,6 +17,7 @@ if APP_DIR not in sys.path:
 
 from federated_common import (
     DATA_DIR,
+    DEVICE_FILES,
     WEIGHTS_DIR,
     build_model_from_params,
     evaluate_global,
@@ -82,12 +84,15 @@ def main() -> None:
 
     initial_parameters = fl.common.ndarrays_to_parameters(get_initial_parameters())
 
+    total_clients = len(DEVICE_FILES)
+    min_clients = max(1, math.ceil(total_clients / 3))
+
     strategy = ISPFedAvg(
         fraction_fit=1.0,
         fraction_evaluate=1.0,
-        min_fit_clients=3,
-        min_evaluate_clients=3,
-        min_available_clients=3,
+        min_fit_clients=min_clients,
+        min_evaluate_clients=min_clients,
+        min_available_clients=min_clients,
         evaluate_fn=_evaluate_and_save,
         initial_parameters=initial_parameters,
     )
