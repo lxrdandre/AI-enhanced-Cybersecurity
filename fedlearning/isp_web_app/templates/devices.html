@@ -12,9 +12,8 @@
             <th>Region</th>
             <th>Status</th>
             <th>Last Seen</th>
-            <th>Firmware</th>
             <th>Anomalies (24h)</th>
-            <th>Model</th>
+            <th>Model on device</th>
           </tr>
         </thead>
         <tbody>
@@ -27,10 +26,9 @@
                 {{ d.status }}
               </span>
             </td>
-            <td>{{ d.last_seen.strftime('%Y-%m-%d %H:%M UTC') }}</td>
-            <td>{{ d.firmware }}</td>
+            <td>{{ d.last_seen_str }}</td>
             <td>{{ d.anomalies_24h }}</td>
-            <td>{{ d.model_version }}</td>
+            <td>{{ d.model_name }}</td>
           </tr>
           {% endfor %}
         </tbody>
