@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from pathlib import Path
 import json
 
@@ -17,11 +18,15 @@ DEVICE_FILES = [
     DATA_DIR / "device_1.csv",
     DATA_DIR / "device_2.csv",
     DATA_DIR / "device_3.csv",
+    DATA_DIR / "device_4.csv",
+    DATA_DIR / "device_5.csv",
 ]
 HEARTBEAT_FILES = [
     DATA_DIR / "device_1.heartbeat",
     DATA_DIR / "device_2.heartbeat",
     DATA_DIR / "device_3.heartbeat",
+    DATA_DIR / "device_4.heartbeat",
+    DATA_DIR / "device_5.heartbeat",
 ]
 TEST_FILE = DATA_DIR / "test_supervised.csv"
 WEIGHTS_DIR = DATA_DIR / "global_weights"
@@ -29,7 +34,8 @@ LABEL_COL = "label"
 TS_COL = "ts"
 THRESHOLD = 0.5
 CUMULATIVE_FILE = DATA_DIR / "anomaly_cumulative.json"
-APP_START = datetime.utcnow()
+EET = ZoneInfo("Europe/Bucharest")
+APP_START = datetime.now(tz=EET)
 STARTUP_GRACE_SEC = 60
 MAX_EVAL_SAMPLES = 20000
 
@@ -148,13 +154,21 @@ def _global_recall_fpr() -> tuple[float, float] | None:
     return float(recall), float(fpr)
 
 
+def _now_eet() -> datetime:
+    return datetime.now(tz=EET)
+
+
+def _format_eet(dt: datetime) -> str:
+    return dt.astimezone(EET).strftime("%Y-%m-%d %H:%M EET")
+
+
 def _device_anomalies(df: pd.DataFrame) -> dict:
     if LABEL_COL not in df.columns:
         return {"count": 0, "rate": 0.0, "window": "N/A"}
 
     if TS_COL in df.columns:
-        ts = pd.to_datetime(df[TS_COL], errors="coerce", utc=True)
-        cutoff = datetime.utcnow().replace(tzinfo=ts.dt.tz) - timedelta(hours=24)
+        ts = pd.to_datetime(df[TS_COL], errors="coerce", utc=True).dt.tz_convert(EET)
+        cutoff = _now_eet() - timedelta(hours=24)
         recent = df[ts >= cutoff]
         count = int((recent[LABEL_COL] == 1).sum())
         total = max(int(len(recent)), 1)
@@ -168,26 +182,27 @@ def _device_anomalies(df: pd.DataFrame) -> dict:
 
 
 def _status_from_last_seen(last_seen: datetime) -> str:
-    now = datetime.utcnow()
+    now = _now_eet()
     if (now - APP_START) < timedelta(seconds=STARTUP_GRACE_SEC):
         return "online"
     delta = now - last_seen
     if delta < timedelta(seconds=30):
         return "online"
-    if delta < timedelta(minutes=1):
+    if delta < timedelta(minutes=10):
         return "degraded"
     return "offline"
 
 
 def _device_records() -> list[dict]:
-    regions = ["North", "East", "South"]
-    firmware = ["1.4.2", "1.4.1", "1.3.9"]
-    model_version = "v2.1" if _latest_weights() else "v2.0"
+    regions = ["Timisoara", "Baia Mare", "Ortisoara", "Cluj", "Arad"]
+    model_name = _latest_model_name()
     metrics = _latest_metrics() or {}
     anomalies_by_router = metrics.get("anomalies_by_router", {})
+    latest_round = metrics.get("round")
     cumulative = _load_cumulative()
 
     devices = []
+    now = _now_eet()
     for idx, path in enumerate(DEVICE_FILES, start=1):
         if not path.exists():
             continue
@@ -196,28 +211,60 @@ def _device_records() -> list[dict]:
         router_id = f"router-00{idx}"
         if router_id in anomalies_by_router:
             incoming = int(anomalies_by_router[router_id])
-            prev = int(cumulative.get(router_id, 0))
-            if incoming > prev:
-                cumulative[router_id] = incoming
-            anomalies["count"] = int(cumulative.get(router_id, incoming))
+            prev_entry = cumulative.get(router_id, {})
+            if isinstance(prev_entry, dict):
+                prev_count = int(prev_entry.get("count", 0))
+                prev_round = prev_entry.get("round")
+            else:
+                prev_count = int(prev_entry or 0)
+                prev_round = None
+            if latest_round is None or latest_round != prev_round:
+                new_total = prev_count + incoming
+                cumulative[router_id] = {
+                    "count": new_total,
+                    "ts": now.isoformat(),
+                    "round": latest_round,
+                }
+                anomalies["count"] = new_total
+            else:
+                anomalies["count"] = prev_count
         hb_path = HEARTBEAT_FILES[idx - 1]
         if hb_path.exists():
-            last_seen = datetime.utcfromtimestamp(hb_path.stat().st_mtime)
-            status = _status_from_last_seen(last_seen)
+            last_seen = datetime.fromtimestamp(hb_path.stat().st_mtime, tz=EET)
         else:
-            last_seen = datetime.utcfromtimestamp(path.stat().st_mtime)
-            status = "online"
+            last_seen = datetime.fromtimestamp(path.stat().st_mtime, tz=EET)
+        status = _status_from_last_seen(last_seen)
+        status_overview = "degraded" if status == "offline" else status
+        if anomalies["count"] == 0:
+            entry = cumulative.get(router_id)
+            if isinstance(entry, dict):
+                last_count = int(entry.get("count", 0))
+                last_ts_raw = entry.get("ts")
+                last_ts = (
+                    datetime.fromisoformat(last_ts_raw)
+                    if isinstance(last_ts_raw, str)
+                    else None
+                )
+            else:
+                last_count = int(entry or 0)
+                last_ts = None
+            last_age_ok = True
+            if last_ts is not None:
+                last_age_ok = (now - last_ts) < timedelta(hours=24)
+            if last_count > 0 and last_age_ok:
+                anomalies["count"] = last_count
         devices.append(
             {
                 "id": router_id,
                 "region": regions[idx - 1],
                 "status": status,
+                "status_overview": status_overview,
                 "last_seen": last_seen,
-                "firmware": firmware[idx - 1],
+                "last_seen_str": _format_eet(last_seen),
                 "anomalies_24h": anomalies["count"],
                 "anomaly_rate": anomalies["rate"],
                 "anomaly_window": anomalies["window"],
-                "model_version": model_version,
+                "model_name": model_name,
             }
         )
 
@@ -227,9 +274,9 @@ def _device_records() -> list[dict]:
 
 def _summary(devices: list[dict]) -> dict:
     total = len(devices)
-    online = sum(1 for d in devices if d["status"] == "online")
-    degraded = sum(1 for d in devices if d["status"] == "degraded")
-    offline = sum(1 for d in devices if d["status"] == "offline")
+    online = sum(1 for d in devices if d.get("status_overview", d["status"]) == "online")
+    degraded = sum(1 for d in devices if d.get("status_overview", d["status"]) == "degraded")
+    offline = sum(1 for d in devices if d.get("status_overview", d["status"]) == "offline")
     anomalies = sum(d["anomalies_24h"] for d in devices)
     return {
         "total": total,
@@ -246,7 +293,7 @@ def _alerts(devices: list[dict]) -> list[dict]:
         if d["anomaly_rate"] >= 0.2:
             alerts.append(
                 {
-                    "time": datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
+                    "time": _format_eet(_now_eet()),
                     "router_id": d["id"],
                     "severity": "high",
                     "message": f"High anomaly rate ({d['anomaly_rate']:.1%}) in {d['anomaly_window']} window.",
@@ -255,7 +302,7 @@ def _alerts(devices: list[dict]) -> list[dict]:
         elif d["anomaly_rate"] > 0:
             alerts.append(
                 {
-                    "time": datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
+                    "time": _format_eet(_now_eet()),
                     "router_id": d["id"],
                     "severity": "medium",
                     "message": f"Anomalies detected ({d['anomaly_rate']:.1%}) in {d['anomaly_window']} window.",
@@ -264,13 +311,17 @@ def _alerts(devices: list[dict]) -> list[dict]:
         if d["status"] == "offline":
             alerts.append(
                 {
-                    "time": datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
+                    "time": _format_eet(_now_eet()),
                     "router_id": d["id"],
                     "severity": "low",
                     "message": "Device offline.",
                 }
             )
     return alerts
+
+
+def _latest_model_name() -> str:
+    return "MLPClassifier"
 
 
 @app.route("/")
@@ -300,24 +351,21 @@ def model():
     weights = _latest_weights()
     last_round = int(weights.stem.split("_")[-1]) if weights else 0
     last_update = (
-        datetime.utcfromtimestamp(weights.stat().st_mtime).strftime("%Y-%m-%d %H:%M UTC")
+        _format_eet(datetime.fromtimestamp(weights.stat().st_mtime, tz=EET))
         if weights
         else "N/A"
     )
-    devices = _device_records()
     total_clients = len(DEVICE_FILES)
-    online_clients = sum(1 for d in devices if d["status"] != "offline")
-    participation = int((online_clients / max(total_clients, 1)) * 100)
-
     metrics = _latest_metrics() or {}
     reported = len(metrics.get("anomalies_by_router", {}))
-    update_success = int((reported / max(total_clients, 1)) * 100)
+    participation = int((reported / max(total_clients, 1)) * 100)
+    update_success = participation
 
     accuracy = _global_accuracy()
     recall_fpr = _global_recall_fpr()
 
     model_info = {
-        "version": "v2.1" if weights else "v2.0",
+        "version": "alpha" if weights else "beta",
         "last_round": last_round,
         "threshold": THRESHOLD,
         "recall": f"{recall_fpr[0]:.4f}" if recall_fpr else "N/A",
