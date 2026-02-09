@@ -2,40 +2,80 @@
 
 {% block content %}
 <div class="row g-4">
-  <div class="col-lg-6">
-    <div class="card shadow-sm">
+  <div class="col-lg-7">
+    <div class="card glass-card">
       <div class="card-body">
-        <h5 class="card-title">Global Model</h5>
-        <div class="text-muted small mb-2">Last update: {{ model_info.last_update }}</div>
-        <ul class="list-group list-group-flush">
-          <li class="list-group-item">Version: {{ model_info.version }}</li>
-          <li class="list-group-item">Last Round: {{ model_info.last_round }}</li>
-          <li class="list-group-item">Threshold: {{ model_info.threshold }}</li>
-          <li class="list-group-item">Overall Accuracy: {{ model_info.accuracy }}</li>
-          <li class="list-group-item">Recall: {{ model_info.recall }}</li>
-          <li class="list-group-item">FPR: {{ model_info.fpr }}</li>
-          <li class="list-group-item">Last Update: {{ model_info.last_update }}</li>
-        </ul>
+        <div class="d-flex justify-content-between align-items-start mb-3">
+          <div>
+            <div class="eyebrow">Model Registry</div>
+            <h5 class="card-title mb-0">Global Model</h5>
+            <div class="text-muted small">Last update: {{ model_info.last_update }}</div>
+          </div>
+          <span class="chip">v{{ model_info.version }}</span>
+        </div>
+        <div class="row g-3">
+          <div class="col-md-4">
+            <div class="mini-card">
+              <div class="mini-label">Last Round</div>
+              <div class="mini-value">{{ model_info.last_round }}</div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="mini-card">
+              <div class="mini-label">Threshold</div>
+              <div class="mini-value">{{ model_info.threshold }}</div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="mini-card">
+              <div class="mini-label">Accuracy</div>
+              <div class="mini-value">{{ model_info.accuracy }}</div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="mini-card">
+              <div class="mini-label">Recall</div>
+              <div class="mini-value">{{ model_info.recall }}</div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="mini-card">
+              <div class="mini-label">FPR</div>
+              <div class="mini-value">{{ model_info.fpr }}</div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="mini-card">
+              <div class="mini-label">Last Update</div>
+              <div class="mini-value">{{ model_info.last_update }}</div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
-  <div class="col-lg-6">
-    <div class="card shadow-sm">
+  <div class="col-lg-5">
+    <div class="card glass-card">
       <div class="card-body">
-        <h5 class="card-title">Federated Health</h5>
-        <div class="d-flex justify-content-between mb-2">
-          <span>Client Participation</span>
-          <span>{{ model_info.participation }}%</span>
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div>
+            <div class="eyebrow">Federated Health</div>
+            <h5 class="card-title mb-0">Participation</h5>
+          </div>
+          <span class="chip chip-blue">{{ model_info.participation }}%</span>
         </div>
-        <div class="progress mb-3">
+        <div class="progress progress-glow mb-4">
           <div class="progress-bar" style="width: {{ model_info.participation }}%"></div>
         </div>
-        <div class="d-flex justify-content-between mb-2">
+        <div class="d-flex justify-content-between align-items-center mb-2">
           <span>Update Success</span>
-          <span>{{ model_info.update_success }}%</span>
+          <span class="mono">{{ model_info.update_success }}%</span>
         </div>
-        <div class="progress">
+        <div class="progress progress-glow">
           <div class="progress-bar bg-success" style="width: {{ model_info.update_success }}%"></div>
+        </div>
+        <div class="health-note">
+          Stability improves as more routers share updates every round.
         </div>
       </div>
     </div>

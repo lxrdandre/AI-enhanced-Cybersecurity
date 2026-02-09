@@ -4,17 +4,30 @@
       <meta charset="utf-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1" />
       <title>F.L.A.R.E. Dashboard</title>
-      <meta http-equiv="refresh" content="60" />
+      <meta http-equiv="refresh" content="15" />
+      <link rel="preconnect" href="https://fonts.googleapis.com" />
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+      <link
+        href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap"
+        rel="stylesheet"
+      />
       <link
         href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
         rel="stylesheet"
       />
       <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}" />
     </head>
-    <body class="bg-light">
-      <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+    <body class="flare-body">
+      <nav class="navbar navbar-expand-lg navbar-dark nav-glass">
         <div class="container-fluid">
-          <a class="navbar-brand" href="/">F.L.A.R.E.</a>
+          <a class="navbar-brand brand-lockup" href="/">
+            <img
+              src="{{ url_for('static', filename='css/logo.png') }}"
+              alt="F.L.A.R.E. logo"
+              class="brand-logo"
+            />
+            <span class="brand-text">F.L.A.R.E.</span>
+          </a>
           <button
             class="navbar-toggler"
             type="button"
@@ -33,7 +46,7 @@
         </div>
       </nav>
 
-      <main class="container py-4">
+      <main class="container py-4 page-wrap">
         {% block content %}{% endblock %}
       </main>
 

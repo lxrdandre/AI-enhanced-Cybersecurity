@@ -1,11 +1,17 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="card shadow-sm">
+<div class="card glass-card">
   <div class="card-body">
-    <h5 class="card-title">Devices</h5>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div>
+        <div class="eyebrow">Fleet View</div>
+        <h5 class="card-title mb-0">Devices</h5>
+      </div>
+      <span class="chip">Live status</span>
+    </div>
     <div class="table-responsive">
-      <table class="table align-middle">
+      <table class="table table-hover align-middle fleet-table">
         <thead>
           <tr>
             <th>Router ID</th>
@@ -18,17 +24,21 @@
         </thead>
         <tbody>
           {% for d in devices %}
-          <tr>
-            <td>{{ d.id }}</td>
+          <tr class="router-row" onclick="window.open('/devices/{{ d.id }}','_blank')">
+            <td class="mono">
+              <a class="router-link" href="/devices/{{ d.id }}" target="_blank">{{ d.id }}</a>
+            </td>
             <td>{{ d.region }}</td>
             <td>
-              <span class="badge bg-{{ 'success' if d.status=='online' else 'warning' if d.status=='degraded' else 'secondary' }}">
+              <span class="status-pill status-{{ d.status }}">
                 {{ d.status }}
               </span>
             </td>
             <td>{{ d.last_seen_str }}</td>
-            <td>{{ d.anomalies_24h }}</td>
-            <td>{{ d.model_name }}</td>
+            <td>
+              <span class="badge badge-glow">{{ d.anomalies_24h }}</span>
+            </td>
+            <td class="mono">{{ d.model_name }}</td>
           </tr>
           {% endfor %}
         </tbody>
