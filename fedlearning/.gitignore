@@ -1,8 +1,0 @@
-autoencoder_train.py
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.env
-.DS_Store
-Federated_Learning_for_Distributed_IoT_Security_A_.pdf
