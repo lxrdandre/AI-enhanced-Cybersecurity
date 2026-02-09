@@ -346,6 +346,15 @@ def devices():
     return render_template("devices.html", devices=_device_records())
 
 
+@app.route("/devices/<router_id>")
+def device_detail(router_id: str):
+    devices = _device_records()
+    device = next((d for d in devices if d["id"] == router_id), None)
+    if device is None:
+        return render_template("device_detail.html", device=None), 404
+    return render_template("device_detail.html", device=device)
+
+
 @app.route("/model")
 def model():
     weights = _latest_weights()
