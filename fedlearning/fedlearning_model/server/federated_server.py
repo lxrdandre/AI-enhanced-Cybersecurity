@@ -28,7 +28,7 @@ from federated_common import (
 # Server config
 SERVER_ADDRESS = "127.0.0.1:8080"
 NUM_ROUNDS = 180
-ROUND_SLEEP_SEC = 60
+ROUND_SLEEP_SEC = 10
 
 
 def main() -> None:
