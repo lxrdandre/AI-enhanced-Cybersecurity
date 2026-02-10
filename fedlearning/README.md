@@ -1,4 +1,5 @@
 F.L.A.R.E. - made by me and my business partner [David](https://github.com/davidd234).
+
 F.L.A.R.E. is a privacy-first cybersecurity infrastructure designed for Internet Service Providers. It deploys lightweight AI models to edge routers to detect network anomalies locally, transmitting only mathematical model updates to a central server using Federated Learning strategies. This ensures fleet-wide immunity against botnets while remaining GDPR compliant by keeping raw user data on-device.
 
 Quick Start
