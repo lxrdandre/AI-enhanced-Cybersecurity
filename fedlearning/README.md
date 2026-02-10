@@ -1,2 +1,2 @@
-Link video nou - am vazut ca la partea cu web app nu a mers microfonul
-https://youtu.be/jsh0ggzKKKI
+Here you can see the presentation of the project
+https://gamma.app/docs/FEDERATED-LEARNING-ANOMALY-RESPONSE-ENGINE-o3zwkb7gsmfffvw
