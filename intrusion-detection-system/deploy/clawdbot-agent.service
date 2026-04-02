@@ -1,0 +1,25 @@
+[Unit]
+Description=ClawdBot IDS Traffic Capture Agent
+After=network.target ids-api.service ollama.service
+Requires=ids-api.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/data/ton-iot-project/fresh_start
+Environment="PATH=/data/ton-iot-project/venv_h200/bin:/usr/local/bin:/usr/bin"
+Environment="CLAWDBOT_INTERFACE=wt0"
+Environment="CLAWDBOT_API_URL=http://127.0.0.1:8000"
+Environment="CLAWDBOT_HARVEST_INTERVAL=10"
+Environment="CLAWDBOT_SEVERITY_THRESHOLD=medium"
+Environment="CLAWDBOT_LOG_DIR=/data/ton-iot-project/fresh_start/logs"
+EnvironmentFile=-/data/ton-iot-project/fresh_start/.env
+ExecStart=/data/ton-iot-project/venv_h200/bin/python -m clawdbot
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=clawdbot
+
+[Install]
+WantedBy=multi-user.target

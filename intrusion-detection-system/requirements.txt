@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+numpy
+pandas
+scikit-learn
+imbalanced-learn
+pydantic
+tensorflow[and-cuda]
+scapy

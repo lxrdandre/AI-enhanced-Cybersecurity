@@ -1,0 +1,94 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% if device %}
+<section class="hero-card">
+  <div class="row g-4 align-items-center">
+    <div class="col-lg-8">
+      <div class="eyebrow">Router Detail</div>
+      <h1 class="hero-title">{{ device.id }}</h1>
+      <p class="hero-subtitle">
+        Region {{ device.region }}. Status {{ device.status }}. Last seen {{ device.last_seen_str }}.
+      </p>
+      <div class="hero-badges">
+        <span class="pill pill-blue">Model {{ device.model_name }}</span>
+        <span class="pill pill-orange">Window {{ device.anomaly_window }}</span>
+        <span class="pill pill-purple">Rate {{ (device.anomaly_rate * 100) | round(2) }}%</span>
+      </div>
+    </div>
+    <div class="col-lg-4">
+      <div class="hero-kpis">
+        <div class="kpi-card">
+          <div class="kpi-label">Anomalies (24h)</div>
+          <div class="kpi-value text-danger">{{ device.anomalies_24h }}</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Status</div>
+          <div class="kpi-value">{{ device.status }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="row g-4 mt-2">
+  <div class="col-lg-6">
+    <div class="card glass-card">
+      <div class="card-body">
+        <h5 class="card-title">Telemetry</h5>
+        <ul class="list-group list-group-flush flashy-list">
+          <li class="list-group-item d-flex justify-content-between">
+            <span>Router ID</span>
+            <span class="mono">{{ device.id }}</span>
+          </li>
+          <li class="list-group-item d-flex justify-content-between">
+            <span>Region</span>
+            <span>{{ device.region }}</span>
+          </li>
+          <li class="list-group-item d-flex justify-content-between">
+            <span>Status</span>
+            <span class="status-pill status-{{ device.status }}">{{ device.status }}</span>
+          </li>
+          <li class="list-group-item d-flex justify-content-between">
+            <span>Last Seen</span>
+            <span>{{ device.last_seen_str }}</span>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card glass-card">
+      <div class="card-body">
+        <h5 class="card-title">Anomaly Snapshot</h5>
+        <ul class="list-group list-group-flush flashy-list">
+          <li class="list-group-item d-flex justify-content-between">
+            <span>Anomalies (24h)</span>
+            <span class="badge badge-glow">{{ device.anomalies_24h }}</span>
+          </li>
+          <li class="list-group-item d-flex justify-content-between">
+            <span>Rate</span>
+            <span>{{ (device.anomaly_rate * 100) | round(2) }}%</span>
+          </li>
+          <li class="list-group-item d-flex justify-content-between">
+            <span>Window</span>
+            <span>{{ device.anomaly_window }}</span>
+          </li>
+          <li class="list-group-item d-flex justify-content-between">
+            <span>Model</span>
+            <span class="mono">{{ device.model_name }}</span>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="card glass-card">
+  <div class="card-body">
+    <h5 class="card-title">Router not found</h5>
+    <p class="text-muted">The requested router ID does not exist.</p>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

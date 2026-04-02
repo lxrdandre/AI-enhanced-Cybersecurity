@@ -1,0 +1,117 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<section class="hero-card">
+  <div class="row g-4 align-items-center">
+    <div class="col-lg-7">
+      <div class="eyebrow">Federated Learning Anomaly Response Engine</div>
+      <h1 class="hero-title">Live Security Dashboard</h1>
+      <p class="hero-subtitle">
+        Real-time anomaly intelligence across the mesh. Updated automatically every round.
+      </p>
+      <div class="hero-badges">
+        <span class="pill pill-blue">Auto-refresh 15s</span>
+        <span class="pill pill-orange">MVP Preview</span>
+        <span class="pill pill-purple">Core functionalities</span>
+      </div>
+    </div>
+    <div class="col-lg-5">
+      <div class="hero-kpis">
+        <div class="kpi-card">
+          <div class="kpi-label">Total Routers</div>
+          <div class="kpi-value">{{ summary.total }}</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Online</div>
+          <div class="kpi-value text-success">{{ summary.online }}</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Degraded</div>
+          <div class="kpi-value text-warning">{{ summary.degraded }}</div>
+        </div>
+        <div class="kpi-card accent-danger">
+          <div class="kpi-label">Anomalies (24h)</div>
+          <div class="kpi-value text-danger">{{ summary.anomalies }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="row g-4 mt-2">
+  <div class="col-lg-8">
+    <div class="card glass-card">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="card-title mb-0">Anomalies & Participation (Per Router)</h5>
+          <span class="chip">Last round</span>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="lineChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card glass-card">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="card-title mb-0">Top Devices (24h)</h5>
+          <span class="chip chip-danger">Hotspots</span>
+        </div>
+        <ul class="list-group list-group-flush flashy-list">
+          {% for d in devices %}
+          <li class="list-group-item d-flex justify-content-between align-items-center">
+            <span class="mono">{{ d.id }}</span>
+            <span class="badge badge-glow">{{ d.anomalies_24h }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const chartData = {{ chart_data | tojson }};
+  const ctx = document.getElementById('lineChart');
+  if (ctx) {
+    new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: chartData.labels,
+      datasets: [
+        {
+          label: 'Anomalies',
+          data: chartData.anomalies,
+          borderColor: '#ff5d6e',
+          backgroundColor: 'rgba(255,93,110,0.16)',
+          tension: 0.3
+        },
+        {
+          label: 'Client Participation %',
+          data: chartData.participation,
+          borderColor: '#4f9cff',
+          backgroundColor: 'rgba(79,156,255,0.16)',
+          tension: 0.3
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 400 },
+      plugins: {
+        legend: { position: 'bottom' }
+      },
+      scales: {
+        y: { grid: { color: 'rgba(255,255,255,0.06)' } },
+        x: { grid: { color: 'rgba(255,255,255,0.04)' } }
+      }
+    }
+    });
+  }
+</script>
+{% endblock %}
