@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from clawdbot.telegram import SEVERITY_ORDER, TelegramNotifier
+from clawdbot.telegram import SEVERITY_ORDER, TelegramNotifier, _format_block_result
 
 
 # ── Fixtures ──────────────────────────────────────────────
@@ -172,3 +172,143 @@ class TestAlert:
     def test_alert_skipped_when_disabled(self, sample_prediction, sample_triage):
         n = TelegramNotifier(bot_token="", chat_id="")
         assert n.alert(sample_prediction, sample_triage) is False
+
+
+# ── Block result formatting ──────────────────────────────
+
+class TestFormatBlockResult:
+    def test_blocked(self):
+        br = {"ip": "10.0.0.5", "applied": True, "ttl": 3600}
+        result = _format_block_result(br)
+        assert "Blocked" in result
+        assert "10.0.0.5" in result
+        assert "60min" in result
+
+    def test_blocked_dry_run(self):
+        br = {"ip": "10.0.0.5", "applied": True, "ttl": 1800, "dry_run": True}
+        result = _format_block_result(br)
+        assert "DRY-RUN" in result
+        assert "30min" in result
+
+    def test_whitelisted(self):
+        br = {"ip": "10.0.0.1", "applied": False, "skipped_reason": "whitelisted"}
+        result = _format_block_result(br)
+        assert "whitelisted" in result
+
+    def test_actuator_disabled(self):
+        br = {"ip": "10.0.0.1", "applied": False, "skipped_reason": "actuator_disabled"}
+        result = _format_block_result(br)
+        assert "actuator disabled" in result
+
+
+class TestFormatAlertWithBlockResult:
+    def test_contains_firewall_action(self, notifier, sample_prediction, sample_triage, sample_meta):
+        br = {"ip": "192.168.1.100", "applied": True, "ttl": 3600}
+        msg = notifier.format_alert(sample_prediction, sample_triage, sample_meta, block_result=br)
+        assert "Firewall action" in msg
+        assert "Blocked" in msg
+        assert "60min" in msg
+
+    def test_contains_whitelisted(self, notifier, sample_prediction, sample_triage, sample_meta):
+        br = {"ip": "192.168.1.100", "applied": False, "skipped_reason": "whitelisted"}
+        msg = notifier.format_alert(sample_prediction, sample_triage, sample_meta, block_result=br)
+        assert "whitelisted" in msg
+
+    def test_contains_reputation(self, notifier, sample_prediction, sample_triage, sample_meta):
+        rep = {"badge": "\U0001f534 Known-bad", "hit_count": 5}
+        msg = notifier.format_alert(sample_prediction, sample_triage, sample_meta, reputation=rep)
+        assert "Known-bad" in msg
+        assert "5 hit(s)" in msg
+
+    def test_no_block_section_when_none(self, notifier, sample_prediction, sample_triage):
+        msg = notifier.format_alert(sample_prediction, sample_triage)
+        assert "Firewall action" not in msg
+
+
+class TestBatchSummaryWithBlockResults:
+    def test_batch_shows_blocked_ips(self, notifier, sample_prediction, sample_triage, sample_meta):
+        detections = [{
+            "prediction": sample_prediction,
+            "triage": sample_triage,
+            "flow_meta": sample_meta,
+            "block_result": {"ip": "192.168.1.100", "applied": True, "ttl": 3600},
+            "reputation": None,
+        }]
+        msg = notifier.format_batch_summary(detections)
+        assert "Firewall actions" in msg
+        assert "Blocked" in msg
+        assert "192.168.1.100" in msg
+
+    def test_batch_shows_whitelisted(self, notifier, sample_prediction, sample_triage, sample_meta):
+        detections = [{
+            "prediction": sample_prediction,
+            "triage": sample_triage,
+            "flow_meta": sample_meta,
+            "block_result": {"ip": "10.0.0.1", "applied": False, "skipped_reason": "whitelisted"},
+            "reputation": None,
+        }]
+        msg = notifier.format_batch_summary(detections)
+        assert "whitelisted" in msg
+
+    def test_batch_no_firewall_section_without_blocks(self, notifier, sample_prediction, sample_triage, sample_meta):
+        detections = [{
+            "prediction": sample_prediction,
+            "triage": sample_triage,
+            "flow_meta": sample_meta,
+            "block_result": None,
+            "reputation": None,
+        }]
+        msg = notifier.format_batch_summary(detections)
+        assert "Firewall actions" not in msg
+
+    def test_batch_maps_mitre_for_primary_only(self, notifier, sample_meta):
+        detections = [
+            {
+                "prediction": {"predicted_label": "scanning", "confidence": 0.95},
+                "triage": {
+                    "label": "scanning",
+                    "severity": "high",
+                    "mitre_techniques": [{"id": "T1595", "name": "Active Scanning"}],
+                },
+                "flow_meta": sample_meta,
+            },
+            {
+                "prediction": {"predicted_label": "scanning", "confidence": 0.92},
+                "triage": {
+                    "label": "scanning",
+                    "severity": "high",
+                    "mitre_techniques": [{"id": "T1595", "name": "Active Scanning"}],
+                },
+                "flow_meta": sample_meta,
+            },
+            {
+                "prediction": {"predicted_label": "password", "confidence": 0.91},
+                "triage": {
+                    "label": "password",
+                    "severity": "high",
+                    "mitre_techniques": [{"id": "T1110", "name": "Brute Force"}],
+                },
+                "flow_meta": sample_meta,
+            },
+            {
+                "prediction": {"predicted_label": "ddos_dos", "confidence": 0.93},
+                "triage": {
+                    "label": "ddos_dos",
+                    "severity": "high",
+                    "mitre_techniques": [{"id": "T1498", "name": "Network Denial of Service"}],
+                },
+                "flow_meta": sample_meta,
+            },
+        ]
+
+        msg = notifier.format_batch_summary(detections)
+
+        assert "1 threat, 2 possible" in msg
+        assert "Primary incident" in msg
+        assert "scanning" in msg
+        assert "Secondary signals" in msg
+        assert "not MITRE-mapped" in msg
+        assert "flow(s)" not in msg
+        assert "T1595" in msg
+        assert "T1110" not in msg
+        assert "T1498" not in msg

@@ -47,6 +47,8 @@ class PredictionItem(BaseModel):
     predicted_label: str
     confidence: float
     probabilities: dict[str, float]
+    route: str | None = None
+    router_confidence: float | None = None
 
 
 class PredictResponse(BaseModel):
@@ -64,6 +66,8 @@ class MetadataResponse(BaseModel):
     required_fields: list[str]
     feature_signature_sha256: str
     unknown_confidence_threshold: float
+    routing_enabled: bool = False
+    route_fields: list[str] = []
 
 
 class AnalyzeRequest(PredictRequest):

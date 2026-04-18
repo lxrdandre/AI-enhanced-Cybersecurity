@@ -59,6 +59,59 @@ DEFAULT_MITRE_MAP = {
     },
 }
 
+DEFAULT_RESPONSE_ACTIONS = {
+    "scanning": [
+        "Confirm whether the source is an approved scanner; if not, block or rate-limit the source IP.",
+        "Review the destination ports/hosts touched by the scan and close or firewall unnecessary exposed services.",
+        "Correlate the same source after the scan for follow-on login attempts, exploitation, or web probing.",
+        "Preserve a short packet/log sample with timestamps, scanned ports, and affected assets for reporting.",
+    ],
+    "password": [
+        "Check authentication logs for failed-login bursts, username spraying, and any successful login after failures.",
+        "Temporarily block or rate-limit the source and enable service-level controls such as fail2ban or account lockout.",
+        "Force password reset and MFA review for any account targeted or successfully accessed.",
+        "Review exposed SSH/RDP/VPN/admin portals and restrict access to trusted networks where possible.",
+    ],
+    "ddos_dos": [
+        "Check target service health, packet/request rate, connection backlog, and whether legitimate users are impacted.",
+        "Apply edge rate limits, WAF/API throttling, SYN protection, or upstream DDoS filtering for the targeted service.",
+        "Block or challenge repeated sources where safe, but prefer upstream filtering if many sources are involved.",
+        "Preserve flow counters and top talkers for post-incident tuning and provider escalation.",
+    ],
+    "injection": [
+        "Inspect application/API logs for payloads, parameters, stack traces, SQL errors, command execution, or template errors.",
+        "Identify the vulnerable endpoint and patch input validation, parameterized queries, escaping, or unsafe deserialization.",
+        "Add a temporary WAF/API-gateway rule for the observed payload pattern while the code fix is deployed.",
+        "Review database/application accounts for suspicious access or data changes around the detection time.",
+    ],
+    "xss": [
+        "Inspect request parameters and stored content for script/HTML injection payloads and affected pages.",
+        "Apply output encoding, input validation, and a restrictive Content Security Policy for the affected route.",
+        "Review user sessions and accounts that viewed or submitted the affected content.",
+        "Add a temporary WAF rule for the observed payload while the application fix is deployed.",
+    ],
+    "backdoor": [
+        "Isolate the suspected host or service from the network before cleanup.",
+        "Collect volatile evidence, running processes, listening ports, scheduled tasks, startup entries, and web roots.",
+        "Block suspected command-and-control egress and search neighboring hosts for the same indicators.",
+        "Rotate exposed credentials and rebuild from a trusted image if persistence is confirmed.",
+    ],
+    "unknown": [
+        "Preserve the flow, packet sample if available, and correlated application/firewall logs for manual classification.",
+        "Check source reputation, destination asset role, port purpose, and whether the behavior repeats across windows.",
+        "If repeated or high-impact, temporarily restrict the source while classifying the traffic.",
+        "Promote to a concrete class once payload, service logs, or repeated behavior supports a specific attack type.",
+    ],
+    "normal": [
+        "No response required unless this event is correlated with other suspicious activity.",
+        "If this was unexpected, verify the asset baseline and update allowlists or detection thresholds.",
+    ],
+}
+
+
+def response_actions_for_label(label: str) -> list[str]:
+    return list(DEFAULT_RESPONSE_ACTIONS.get(label, DEFAULT_RESPONSE_ACTIONS["unknown"]))
+
 
 def _severity_for_label(label: str, confidence: float) -> str:
     if label == "normal":
@@ -91,10 +144,7 @@ def _default_triage_item(prediction: dict) -> dict:
             for t in mitre["techniques"]
         ],
         "summary": f"Classifier flagged '{label}' with confidence {confidence:.3f}.",
-        "next_actions": [
-            "Review correlated logs for same source/destination context.",
-            "Validate whether this pattern matches expected baseline behavior.",
-        ],
+        "next_actions": response_actions_for_label(label),
         "confidence_note": (
             "Model confidence is high." if confidence >= 0.8 else "Model confidence is moderate/low; review recommended."
         ),
@@ -128,6 +178,7 @@ class TriageService:
         ollama_model_tier2: str = "llama3.1:70b-instruct-q8_0",
         ollama_escalation_confidence: float = 0.75,
         triage_backend: str = "ollama",
+        threat_cache=None,
     ):
         self.api_key = api_key
         self.model = model
@@ -137,6 +188,7 @@ class TriageService:
         self.ollama_model_tier2 = ollama_model_tier2
         self.ollama_escalation_confidence = ollama_escalation_confidence
         self.triage_backend = triage_backend  # "ollama" | "gemini" | "fallback"
+        self.threat_cache = threat_cache  # Optional ThreatCache for STIX context
 
     @property
     def enabled(self) -> bool:
@@ -150,13 +202,24 @@ class TriageService:
 
     @staticmethod
     def _build_prompt(prediction: dict, record: dict, context: dict | None) -> str:
-        prompt = {
-            "task": "SOC triage and MITRE enrichment",
-            "constraints": [
+        label = str(prediction.get("predicted_label", "unknown"))
+        target = "incident" if str((context or {}).get("classification_scope", "")).lower() == "incident" else "flow"
+        if label == "unknown":
+            constraints = [
+                f"The classifier output is unknown; classify the {target} into the most likely IDS class if evidence supports it.",
+                "Use one of: backdoor, ddos_dos, injection, normal, password, scanning, xss, unknown.",
+                f"Return unknown if the {target} is not classifiable from the provided fields.",
+                "Return JSON only.",
+            ]
+        else:
+            constraints = [
                 "Do not relabel classifier output.",
                 "Return JSON only.",
                 "If uncertain, set severity to review.",
-            ],
+            ]
+        prompt = {
+            "task": "SOC triage and MITRE enrichment",
+            "constraints": constraints,
             "output_schema": {
                 "label": "string",
                 "severity": "low|medium|high|critical|review",
@@ -216,21 +279,46 @@ class TriageService:
         record: dict,
         context: dict | None,
     ) -> dict:
-        prompt_text = self._build_prompt(prediction, record, context)
         confidence = float(prediction.get("confidence", 0.0))
         label = str(prediction.get("predicted_label", "unknown"))
         severity = _severity_for_label(label, confidence)
+        unknown_priority = str((context or {}).get("unknown_priority", "")).lower()
 
-        # Tier-1: fast model
-        text = self._ollama_chat(model=self.ollama_model_tier1, prompt_text=prompt_text)
-        triage = _extract_json(text)
-        source = f"ollama:{self.ollama_model_tier1}"
+        # Inject STIX techniques relevant to this label's tactics
+        enriched_context = dict(context or {})
+        if self.threat_cache is not None:
+            mitre_map = DEFAULT_MITRE_MAP.get(label, {})
+            tactics = mitre_map.get("tactics", [])
+            if tactics:
+                stix_techniques = self.threat_cache.techniques_for_tactics(tactics, limit=15)
+                if stix_techniques:
+                    enriched_context["mitre_stix_techniques"] = stix_techniques
 
-        # Escalate to Tier-2 when conditions are met
-        needs_escalation = (
-            confidence < self.ollama_escalation_confidence
-            or severity in ("review", "critical")
-        )
+        prompt_text = self._build_prompt(prediction, record, enriched_context or None)
+
+        if label == "unknown" and unknown_priority == "primary" and self.ollama_model_tier2:
+            log.info("Classifying primary unknown with tier-2 (%s)", self.ollama_model_tier2)
+            try:
+                text = self._ollama_chat(model=self.ollama_model_tier2, prompt_text=prompt_text)
+            except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as exc:
+                log.warning("Primary unknown tier-2 classification failed, falling back to tier-1: %s", exc)
+                text = self._ollama_chat(model=self.ollama_model_tier1, prompt_text=prompt_text)
+                source = f"ollama:{self.ollama_model_tier1}"
+            else:
+                source = f"ollama:{self.ollama_model_tier2}"
+            triage = _extract_json(text)
+            needs_escalation = False
+        else:
+            text = self._ollama_chat(model=self.ollama_model_tier1, prompt_text=prompt_text)
+            triage = _extract_json(text)
+            source = f"ollama:{self.ollama_model_tier1}"
+            needs_escalation = (
+                label == "unknown" and unknown_priority != "secondary"
+            ) or (
+                label != "unknown"
+                and (confidence < self.ollama_escalation_confidence or severity in ("review", "critical"))
+            )
+
         if needs_escalation and self.ollama_model_tier2:
             log.info(
                 "Escalating to tier-2 (%s): confidence=%.3f severity=%s label=%s",
@@ -313,14 +401,21 @@ class TriageService:
             record = records[idx] if idx < len(records) else {}
             label = str(prediction.get("predicted_label", "unknown"))
 
-            # Skip LLM for benign and unknown traffic
-            if label in ("normal", "unknown"):
+            # Skip LLM for benign traffic only; unknown gets LLM fallback
+            if label == "normal":
                 triage_results.append(_default_triage_item(prediction))
                 continue
 
+            # Unknown: ask LLM to attempt classification
+            use_llm_classification = label == "unknown"
+
             if self.triage_backend == "ollama":
                 try:
-                    triage_item = self._ollama_triage(prediction=prediction, record=record, context=context)
+                    if use_llm_classification:
+                        triage_item = self._ollama_triage(prediction=prediction, record=record, context=context)
+                        triage_item["llm_reclassified"] = True
+                    else:
+                        triage_item = self._ollama_triage(prediction=prediction, record=record, context=context)
                 except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
                     llm_error = str(exc)
                     log.warning("Ollama triage failed, using fallback: %s", exc)

@@ -1,4 +1,6 @@
-# TON IoT IDS — Deployable Inference Service + ClawdBot SOC Agent
+Video of current functionalities - https://youtu.be/PqMEY2Pppp0
+
+# TON IoT IPS — Deployable Inference Service + ClawdBot SOC Agent
 
 Network intrusion detection system built on SE-DWNet/ResNet with a FastAPI inference API, tiered local LLM triage (Ollama), autonomous SOC response agent (ClawdBot via OpenClaw), and Telegram alerting.
 
@@ -16,14 +18,15 @@ Network intrusion detection system built on SE-DWNet/ResNet with a FastAPI infer
 6. [Step 4 — Telegram bot](#step-4--telegram-bot)
 7. [Step 5 — ClawdBot capture agent](#step-5--clawdbot-capture-agent)
 8. [Step 6 — Start everything](#step-6--start-everything)
-9. [Systemd deployment](#systemd-deployment)
-10. [Restarting services](#restarting-services)
-11. [Environment variables reference](#environment-variables-reference)
-12. [API endpoints](#api-endpoints)
-13. [Tiered LLM escalation](#tiered-llm-escalation)
-14. [Telegram alert format](#telegram-alert-format)
-15. [Running tests](#running-tests)
-16. [LLM model recommendation](#llm-model-recommendation)
+9. [Step 7 — Live Dashboard](#step-7--live-dashboard)
+10. [Systemd deployment](#systemd-deployment)
+11. [Restarting services](#restarting-services)
+12. [Environment variables reference](#environment-variables-reference)
+13. [API endpoints](#api-endpoints)
+14. [Tiered LLM escalation](#tiered-llm-escalation)
+15. [Telegram alert format](#telegram-alert-format)
+16. [Running tests](#running-tests)
+17. [LLM model recommendation](#llm-model-recommendation)
 
 ---
 
@@ -314,6 +317,37 @@ curl http://127.0.0.1:11434/api/tags       # Ollama
 
 ---
 
+## Step 7 — Live Dashboard
+
+The Flask dashboard reads ClawdBot event logs and IDS audit logs, then refreshes SOC metrics in the browser every few seconds. It loads Chart.js and Google Fonts from public CDNs for the live charts and typography.
+
+```bash
+source venv_h200/bin/activate
+export TON_IOT_PROJECT_ROOT=$(pwd)
+export TON_IOT_DASHBOARD_HOST=0.0.0.0
+export TON_IOT_DASHBOARD_PORT=5000
+python -m dashboard.app
+```
+
+Open:
+
+```text
+http://SERVER_IP:5000
+```
+
+Dashboard data sources:
+
+| Source | Default path | Used for |
+|--------|--------------|----------|
+| ClawdBot attacks | `logs/attacks.jsonl` | Latest incidents, severity, source/target/port rankings |
+| ClawdBot actions | `logs/actions.jsonl` | Agent/firewall/system events |
+| IDS audit | `artifacts/audit/analyze_events.jsonl` | Analyzed record counts, route mix, unknown rate, LLM errors |
+| IDS API | `http://127.0.0.1:8000` | Online status and model metadata |
+
+The Incident Stream marks whether a detection was sent to Telegram. Use the `Open` button to view MITRE ATT&CK mapping, model route/confidence, flow context, firewall/reputation status, and response/remediation actions.
+
+---
+
 ## Systemd deployment
 
 For production, use the systemd unit files in `deploy/`:
@@ -323,12 +357,13 @@ For production, use the systemd unit files in `deploy/`:
 sudo bash deploy/install.sh
 ```
 
-This installs two services:
+This installs three services:
 
 | Service | Description | User |
 |---------|-------------|------|
 | `ids-api` | Uvicorn IDS API on port 8000 | `adrian` |
 | `clawdbot-agent` | Capture agent (needs `CAP_NET_RAW`) | `root` |
+| `ids-dashboard` | Flask live dashboard on port 5000 | `adrian` |
 
 ### Customise before installing
 
@@ -352,13 +387,15 @@ chmod 600 /home/adrian/fresh_start/.env
 # View logs
 journalctl -u ids-api -f
 journalctl -u clawdbot-agent -f
+journalctl -u ids-dashboard -f
 
 # Restart individual services
 sudo systemctl restart ids-api
 sudo systemctl restart clawdbot-agent
+sudo systemctl restart ids-dashboard
 
 # Stop everything
-sudo systemctl stop clawdbot-agent ids-api
+sudo systemctl stop clawdbot-agent ids-dashboard ids-api
 ```
 
 ---
@@ -460,7 +497,20 @@ openclaw gateway &
 | `CLAWDBOT_HARVEST_INTERVAL` | `10` | Seconds between flow harvests |
 | `CLAWDBOT_SEVERITY_THRESHOLD` | `medium` | Min severity for Telegram alerts |
 | `CLAWDBOT_LOG_DIR` | `/data/ton-iot-project/fresh_start/logs` | Attack + action event logs |
+| `CLAWDBOT_IGNORE_PORTS` | `22,64295,5000,8000` | Management ports ignored between whitelisted peers before IDS analysis |
 | `LOG_LEVEL` | `INFO` | Agent log level |
+
+### Dashboard
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TON_IOT_DASHBOARD_HOST` | `127.0.0.1` | Dashboard bind host |
+| `TON_IOT_DASHBOARD_PORT` | `5000` | Dashboard port |
+| `TON_IOT_DASHBOARD_API_URL` | `http://127.0.0.1:8000` | IDS API base URL for status/metadata |
+| `TON_IOT_DASHBOARD_LOG_DIR` | `$CLAWDBOT_LOG_DIR` or `$ROOT/logs` | ClawdBot event log directory |
+| `TON_IOT_DASHBOARD_AUDIT_LOG` | `$ROOT/artifacts/audit/analyze_events.jsonl` | IDS audit JSONL path |
+| `TON_IOT_DASHBOARD_REFRESH_SECONDS` | `5` | Browser polling interval |
+| `TON_IOT_DASHBOARD_IGNORE_PORTS` | `22,64295,5000,8000` | Ports hidden from dashboard metrics; set to `none` to disable |
 
 ---
 

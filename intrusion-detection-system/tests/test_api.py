@@ -48,6 +48,7 @@ def _build_mock_service():
         "input_dim": 42,
         "required_fields": ["duration", "src_bytes", "dst_bytes", "proto"],
         "feature_signature_sha256": "deadbeef",
+        "unknown_confidence_threshold": 0.3,
     }
     return svc
 

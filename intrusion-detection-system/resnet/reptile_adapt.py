@@ -63,8 +63,8 @@ from tensorflow.keras.layers import Dense, BatchNormalization
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 
-from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
+from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, confusion_matrix
 
 import matplotlib
@@ -249,7 +249,6 @@ def _load_new_class_data(
     df = pd.read_csv(csv_path, low_memory=False)
     df.columns = df.columns.str.strip()
 
-    # Drop time columns
     df.drop(columns=["ts", "date", "time"], errors="ignore", inplace=True)
 
     if new_class_name:
@@ -475,6 +474,8 @@ def main(argv: list[str] | None = None) -> None:
         combined_df = pd.concat([rehearsal_df, new_df], ignore_index=True)
     else:
         combined_df = new_df.copy()
+    if "ts" in combined_df.columns:
+        combined_df.drop(columns=["ts"], inplace=True)
     combined_df = combined_df.sample(frac=1.0, random_state=SEED).reset_index(drop=True)
 
     all_classes = sorted(set(existing_classes + truly_new))
@@ -496,14 +497,17 @@ def main(argv: list[str] | None = None) -> None:
         x_all_df = x_all_df[valid_mask].copy()
         y_all_str = y_all_str[valid_mask].copy()
 
-    # Split 80/20 train/test
+    # Random stratified split 80/20
+    if "ts" in x_all_df.columns:
+        x_all_df = x_all_df.drop(columns=["ts"])
+
     x_train_df, x_test_df, y_train_str, y_test_str = train_test_split(
-        x_all_df, y_all_str, test_size=0.2,
-        stratify=y_all_str, random_state=SEED,
+        x_all_df, y_all_str, test_size=0.2, stratify=y_all_str, random_state=SEED,
     )
 
     y_train = le_adapt.transform(y_train_str)
     y_test = le_adapt.transform(y_test_str)
+    print(f"Random split — Train: {len(x_train_df)}  Test: {len(x_test_df)}")
 
     del combined_df, x_all_df, y_all_str
     gc.collect()

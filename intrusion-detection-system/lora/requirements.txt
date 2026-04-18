@@ -1,0 +1,9 @@
+# LoRA fine-tuning dependencies (install on SVM only)
+# See https://github.com/unslothai/unsloth for latest install instructions
+#
+# Install with:
+#   pip install -r lora/requirements.txt
+
+unsloth
+datasets
+trl

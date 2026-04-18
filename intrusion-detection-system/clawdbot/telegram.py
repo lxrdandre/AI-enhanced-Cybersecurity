@@ -21,6 +21,23 @@ SEVERITY_ICONS = {
 SEVERITY_ORDER = {"low": 0, "medium": 1, "review": 2, "high": 3, "critical": 4}
 
 
+def _format_block_result(br: dict) -> str:
+    """Format a single block_result dict into a human-readable line."""
+    ip = br.get("ip", "?")
+    if br.get("skipped_reason") == "whitelisted":
+        return f"  {escape(ip)} — skipped (whitelisted)"
+    if br.get("skipped_reason") == "actuator_disabled":
+        return f"  {escape(ip)} — skipped (actuator disabled)"
+    if br.get("skipped_reason"):
+        return f"  {escape(ip)} — skipped ({escape(br['skipped_reason'])})"
+    if br.get("applied"):
+        ttl = br.get("ttl", 0)
+        ttl_str = f"{ttl // 60}min" if ttl >= 60 else f"{ttl}s"
+        prefix = "[DRY-RUN] " if br.get("dry_run") else ""
+        return f"  {prefix}Blocked {escape(ip)} for {ttl_str}"
+    return f"  {escape(ip)} — no action"
+
+
 class TelegramNotifier:
     def __init__(
         self,
@@ -44,21 +61,26 @@ class TelegramNotifier:
         level = SEVERITY_ORDER.get(severity, 0)
         return level >= threshold
 
-    def format_alert(self, prediction: dict, triage: dict, flow_meta: dict | None = None) -> str:
+    def format_alert(self, prediction: dict, triage: dict, flow_meta: dict | None = None, block_result: dict | None = None, reputation: dict | None = None) -> str:
         severity = triage.get("severity", "review").upper()
         label = triage.get("label", "unknown")
         icon = SEVERITY_ICONS.get(triage.get("severity", "review"), "")
         confidence = prediction.get("confidence", 0.0)
         summary = triage.get("summary", "")
         source = triage.get("source", "unknown")
+        llm_reclassified = triage.get("llm_reclassified", False)
 
         lines = [f"{icon} <b>{severity} SEVERITY</b> — {escape(label)}", ""]
+
+        if llm_reclassified:
+            lines.append("<b>Note:</b> Model confidence was below threshold; LLM reclassified this flow.")
+            lines.append("")
 
         # MITRE ATT&CK
         tactics = triage.get("mitre_tactics", [])
         techniques = triage.get("mitre_techniques", [])
         if tactics or techniques:
-            lines.append("\U0001f50e <b>MITRE ATT&amp;CK</b>")
+            lines.append("<b>MITRE ATT&amp;CK</b>")
             for tactic in tactics:
                 lines.append(f"  Tactic: {escape(str(tactic))}")
             for tech in techniques:
@@ -68,24 +90,38 @@ class TelegramNotifier:
             lines.append("")
 
         # Confidence
-        lines.append(f"\U0001f4ca Confidence: {confidence:.3f}")
+        lines.append(f"Confidence: {confidence:.3f}")
 
         # Flow metadata
         if flow_meta:
             src = flow_meta.get("src_ip", "?")
             dst = flow_meta.get("dst_ip", "?")
             proto = flow_meta.get("proto", "?")
-            lines.append(f"\U0001f310 {escape(proto.upper())} {escape(src)} \u2192 {escape(dst)}")
+            lines.append(f"{escape(proto.upper())} {escape(src)} \u2192 {escape(dst)}")
 
         # Summary
         if summary:
-            lines.append(f"\U0001f4dd {escape(summary)}")
+            lines.append(f"{escape(summary)}")
         lines.append("")
+
+        # Firewall action
+        if block_result:
+            lines.append("<b>Firewall action</b>")
+            lines.append(_format_block_result(block_result))
+            lines.append("")
+
+        # IP reputation
+        if reputation:
+            badge = reputation.get("badge", "")
+            hits = reputation.get("hit_count", 0)
+            if badge:
+                lines.append(f"Reputation: {escape(badge)} ({hits} hit(s))")
+                lines.append("")
 
         # Next actions
         actions = triage.get("next_actions", [])
         if actions:
-            lines.append("\u23ed <b>Next actions:</b>")
+            lines.append("<b>Next actions:</b>")
             for i, action in enumerate(actions[:5], 1):
                 lines.append(f"  {i}. {escape(str(action))}")
             lines.append("")
@@ -147,10 +183,12 @@ class TelegramNotifier:
         from collections import Counter
 
         label_counts: Counter[str] = Counter()
+        primary_hints: Counter[str] = Counter()
         label_max_conf: dict[str, float] = {}
-        all_techniques: dict[str, str] = {}  # id → name (deduped)
+        label_top_severity: dict[str, str] = {}
         top_severity = "low"
         sample_flows: dict[str, list[str]] = {}  # label → [flow_str, ...]
+        ip_badges: dict[str, str] = {}  # ip → badge (deduped, worst wins)
 
         for det in detections:
             pred = det["prediction"]
@@ -162,13 +200,14 @@ class TelegramNotifier:
             sev = tri.get("severity", "low")
 
             label_counts[label] += 1
+            if tri.get("incident_role") == "primary":
+                primary_hints[label] += 1
             label_max_conf[label] = max(label_max_conf.get(label, 0.0), conf)
+            if SEVERITY_ORDER.get(sev, 0) > SEVERITY_ORDER.get(label_top_severity.get(label, "low"), 0):
+                label_top_severity[label] = sev
 
             if SEVERITY_ORDER.get(sev, 0) > SEVERITY_ORDER.get(top_severity, 0):
                 top_severity = sev
-
-            for tech in tri.get("mitre_techniques", []):
-                all_techniques[tech.get("id", "?")] = tech.get("name", "?")
 
             # Keep up to 3 sample flows per label
             if meta and len(sample_flows.get(label, [])) < 3:
@@ -179,26 +218,117 @@ class TelegramNotifier:
                     f"{proto.upper()} {src} → {dst}"
                 )
 
+            # Collect reputation badges (worst badge per IP wins)
+            rep = det.get("reputation")
+            if rep and meta:
+                src_ip = meta.get("src_ip", "")
+                badge = rep.get("badge", "")
+                if src_ip and badge:
+                    # "Known-bad" > "Suspicious" > "Unknown"
+                    existing = ip_badges.get(src_ip, "")
+                    if "Known-bad" in badge or not existing:
+                        ip_badges[src_ip] = badge
+                    elif "Suspicious" in badge and "Known-bad" not in existing:
+                        ip_badges[src_ip] = badge
+
+        hinted_labels = [label for label, _ in primary_hints.most_common() if label != "unknown"]
+        known_labels = [label for label, _ in label_counts.most_common() if label != "unknown"]
+        if hinted_labels:
+            primary_label = hinted_labels[0]
+        elif primary_hints:
+            primary_label = primary_hints.most_common(1)[0][0]
+        elif known_labels:
+            primary_label = known_labels[0]
+        else:
+            primary_label = label_counts.most_common(1)[0][0] if label_counts else "unknown"
+        secondary_labels = [label for label, _ in label_counts.most_common() if label != primary_label]
+
+        primary_techniques: dict[str, str] = {}
+        for det in detections:
+            tri = det["triage"]
+            label = tri.get("label") or det["prediction"].get("predicted_label", "unknown")
+            if label != primary_label:
+                continue
+            for tech in tri.get("mitre_techniques", []):
+                primary_techniques[tech.get("id", "?")] = tech.get("name", "?")
+
         icon = SEVERITY_ICONS.get(top_severity, "")
-        total = sum(label_counts.values())
+        possible_count = len(secondary_labels)
         lines = [
-            f"{icon} <b>IDS Batch Alert</b> — {total} threat(s) detected",
+            f"{icon} <b>IDS Batch Alert</b> — 1 threat, {possible_count} possible",
             "",
         ]
 
-        # Per-label breakdown
-        for label, count in label_counts.most_common():
-            max_c = label_max_conf.get(label, 0.0)
-            lines.append(f"  • <b>{escape(label)}</b>: {count} flow(s)  (max conf {max_c:.2f})")
-            for flow_str in sample_flows.get(label, []):
-                lines.append(f"      {escape(flow_str)}")
+        primary_conf = label_max_conf.get(primary_label, 0.0)
+        primary_sev = label_top_severity.get(primary_label, "low")
+        lines.append(
+            f"<b>Primary incident</b>: 1 threat — {escape(primary_label)}, "
+            f"max conf {primary_conf:.2f}, severity {escape(primary_sev)}"
+        )
+        for flow_str in sample_flows.get(primary_label, []):
+            lines.append(f"  {escape(flow_str)}")
 
-        # MITRE techniques (deduplicated across all detections)
-        if all_techniques:
+        if secondary_labels:
             lines.append("")
-            lines.append("\U0001f50e <b>MITRE ATT&amp;CK techniques</b>")
-            for tid, tname in list(all_techniques.items())[:8]:
+            lines.append(f"<b>Secondary signals</b>: {possible_count} possible — context only, not MITRE-mapped")
+            for label in secondary_labels:
+                max_c = label_max_conf.get(label, 0.0)
+                lines.append(f"  - <b>{escape(label)}</b> (max conf {max_c:.2f})")
+
+        # LLM reclassification note
+        reclassified_count = sum(
+            1 for det in detections if det["triage"].get("llm_reclassified")
+        )
+        if reclassified_count:
+            lines.append("")
+            lines.append(f"<b>Note:</b> {reclassified_count} observation(s) reclassified by LLM (model confidence below threshold)")
+
+        # MITRE techniques for primary incident only. Secondary labels are noisy
+        # context in batch alerts and should not expand the incident mapping.
+        if primary_techniques:
+            lines.append("")
+            lines.append(f"<b>MITRE ATT&amp;CK techniques</b> — primary {escape(primary_label)} only")
+            for tid, tname in list(primary_techniques.items())[:8]:
                 lines.append(f"  {escape(tid)} — {escape(tname)}")
+
+        # Firewall actions summary
+        blocked_ips: list[str] = []
+        whitelisted_ips: list[str] = []
+        dry_run_ips: list[str] = []
+        for det in detections:
+            br = det.get("block_result")
+            if not br:
+                continue
+            ip = br.get("ip", "?")
+            if br.get("skipped_reason") == "whitelisted":
+                if ip not in whitelisted_ips:
+                    whitelisted_ips.append(ip)
+            elif br.get("applied"):
+                ttl = br.get("ttl", 0)
+                entry = f"{ip} ({ttl // 60}min)"
+                if br.get("dry_run"):
+                    if entry not in dry_run_ips:
+                        dry_run_ips.append(entry)
+                else:
+                    if entry not in blocked_ips:
+                        blocked_ips.append(entry)
+
+        if blocked_ips or whitelisted_ips or dry_run_ips:
+            lines.append("")
+            lines.append("<b>Firewall actions</b>")
+            for entry in blocked_ips[:6]:
+                lines.append(f"  Blocked: {escape(entry)}")
+            for entry in dry_run_ips[:4]:
+                lines.append(f"  [DRY-RUN] Would block: {escape(entry)}")
+            for ip_addr in whitelisted_ips[:4]:
+                lines.append(f"  Skipped (whitelisted): {escape(ip_addr)}")
+
+        # IP reputation badges
+        if ip_badges:
+            lines.append("")
+            lines.append("<b>IP Reputation</b>")
+            for ip_addr, badge_str in list(ip_badges.items())[:6]:
+                lines.append(f"  {escape(ip_addr)}: {escape(badge_str)}")
 
         return "\n".join(lines)
 

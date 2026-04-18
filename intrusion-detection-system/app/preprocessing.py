@@ -90,7 +90,7 @@ def transform_with_pipeline(
         if col in df.columns:
             df[col] = np.log1p(pd.to_numeric(df[col], errors="coerce").fillna(0).clip(lower=0))
 
-    df.loc[:, num_cols] = scaler_num.transform(df[num_cols].values)
+    df[num_cols] = scaler_num.transform(df[num_cols].values)
 
     missing_final = [c for c in final_features if c not in df.columns]
     if missing_final:

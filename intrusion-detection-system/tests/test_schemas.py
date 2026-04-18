@@ -117,6 +117,7 @@ class TestResponseModels:
             input_dim=10,
             required_fields=["duration", "src_bytes", "dst_bytes", "proto"],
             feature_signature_sha256="abc123",
+            unknown_confidence_threshold=0.3,
         )
         assert resp.feature_count == 10
 

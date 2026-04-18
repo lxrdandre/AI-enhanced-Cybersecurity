@@ -35,8 +35,8 @@ import tensorflow as tf
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import BatchNormalization
 
-from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
+from sklearn.model_selection import train_test_split
 
 from app.preprocessing import SafeLabelEncoder, transform_with_pipeline
 
@@ -192,9 +192,11 @@ def _prepare_data(
     y_encoded = target_encoder.transform(df["type"].astype(str).values)
     x_df = df.drop(columns=["type"]).copy()
 
+    # Random stratified split 80/20
     x_train_df, x_val_df, y_train, y_val = train_test_split(
         x_df, y_encoded, test_size=0.2, stratify=y_encoded, random_state=SEED,
     )
+    print(f"Random split — Train: {len(x_train_df)}  Val: {len(x_val_df)}")
 
     del x_df, df
     gc.collect()

@@ -1,0 +1,372 @@
+======================================================
+  ClawdBot IDS — Operations Guide
+  SVM: diploma (100.111.77.70:64295)
+======================================================
+
+SERVICES (4 total)
+  ollama             — Local LLM inference server (mistral-small:24b, llama3.1:70b)
+  ids-api            — FastAPI IDS inference API (port 8000)
+  clawdbot-agent     — Traffic capture + alerting agent (requires root)
+  ids-dashboard      — Flask live SOC dashboard (port 5000)
+
+Boot order: ollama → ids-api → clawdbot-agent → ids-dashboard
+
+------------------------------------------------------
+1. FIRST-TIME SETUP (from scratch)
+------------------------------------------------------
+
+# SSH into SVM
+ssh -p 64295 adrian@100.111.77.70
+
+# Activate venv
+source /data/ton-iot-project/venv_h200/bin/activate
+cd /data/ton-iot-project/fresh_start
+
+# Install Python dependencies
+pip install -r requirements.txt
+
+# Pull Ollama models (one-time)
+ollama pull mistral-small:24b
+ollama pull llama3.1:70b-instruct-q8_0
+
+# Copy systemd unit files
+sudo cp deploy/ids-api.service /etc/systemd/system/
+sudo cp deploy/clawdbot-agent.service /etc/systemd/system/
+sudo cp deploy/ids-dashboard.service /etc/systemd/system/
+
+# Add Telegram credentials to .env (one-time)
+cat >> .env << 'EOF'
+TELEGRAM_BOT_TOKEN=your-bot-token-here
+TELEGRAM_CHAT_ID=your-chat-id-here
+EOF
+
+# Enable and start everything
+sudo systemctl daemon-reload
+sudo systemctl enable ollama ids-api clawdbot-agent ids-dashboard
+sudo systemctl start ollama
+sudo systemctl start ids-api clawdbot-agent ids-dashboard
+
+------------------------------------------------------
+2. START EVERYTHING
+------------------------------------------------------
+
+sudo systemctl start ollama
+sudo systemctl start ids-api clawdbot-agent ids-dashboard
+
+------------------------------------------------------
+3. STOP EVERYTHING
+------------------------------------------------------
+
+sudo systemctl stop ids-dashboard clawdbot-agent ids-api
+sudo systemctl stop ollama
+
+------------------------------------------------------
+4. RESTART EVERYTHING
+------------------------------------------------------
+
+sudo systemctl restart ollama
+sudo systemctl restart ids-api clawdbot-agent ids-dashboard
+
+# Restart just one service:
+sudo systemctl restart ids-api
+sudo systemctl restart clawdbot-agent
+sudo systemctl restart ids-dashboard
+
+------------------------------------------------------
+5. CHECK STATUS
+------------------------------------------------------
+
+# Quick status of all four
+sudo systemctl status ollama ids-api clawdbot-agent ids-dashboard
+
+# Check if Ollama models are loaded
+ollama list
+
+# Check IDS API is responding
+curl -s http://127.0.0.1:8000/health | python3 -m json.tool
+
+# Check dashboard is responding
+curl -s http://127.0.0.1:5000/health | python3 -m json.tool
+
+# Check Ollama API is responding
+curl -s http://127.0.0.1:11434/api/tags | head
+
+# List currently blocked IPs (requires actuator enabled + dry-run off)
+sudo nft list set inet clawdbot blocklist
+
+# Full nftables table (set + chain + drop rule with packet counters)
+sudo nft list table inet clawdbot
+
+# Block/unblock events in the actions log
+grep firewall_block /data/ton-iot-project/fresh_start/logs/actions.jsonl
+
+# Grep agent journal for block actions
+sudo journalctl -u clawdbot-agent --no-pager | grep -i "blocked\|block skipped"
+
+------------------------------------------------------
+5b. LIVE DASHBOARD
+------------------------------------------------------
+
+URL:
+  http://100.111.77.70:5000
+
+Service:
+  sudo systemctl status ids-dashboard
+  sudo systemctl restart ids-dashboard
+  sudo journalctl -u ids-dashboard -f
+
+Health + data endpoints:
+  curl -s http://127.0.0.1:5000/health | python3 -m json.tool
+  curl -s http://127.0.0.1:5000/api/metrics | python3 -m json.tool
+
+Current dashboard behavior:
+  - Reads ClawdBot attack/action logs plus IDS audit logs.
+  - Uses Chart.js from jsDelivr and Google Fonts from Google CDN.
+  - Threat Velocity and Model Route charts are fixed-height Chart.js widgets.
+  - Latest detections initially show 20 rows; use "Show more" for older rows.
+  - "Open" on an incident shows MITRE mapping, response actions, model route, confidence, firewall action, and reputation enrichment.
+  - Telegram-signaled primary attacks create a top-right dashboard popup.
+  - Dashboard popups are only for primary attacks, not secondary context.
+  - Threat counts are incident-based: one primary threat plus X possible secondary labels, not raw flow count.
+  - Management/dashboard traffic on ports 22, 64295, 5000, 8000 is hidden by default.
+
+Browser note:
+  After dashboard CSS/JS changes, hard-refresh Chrome with Cmd+Shift+R.
+
+------------------------------------------------------
+5c. THREAT INTELLIGENCE
+------------------------------------------------------
+
+# View the SQLite threat cache
+sqlite3 /data/ton-iot-project/fresh_start/data/threat_cache.db
+
+# Top 10 offender IPs by cumulative severity
+sqlite3 /data/ton-iot-project/fresh_start/data/threat_cache.db \
+  "SELECT ip, hit_count, cumulative_severity, labels, abuseipdb_score, vt_malicious FROM ip_intel ORDER BY cumulative_severity DESC LIMIT 10;"
+
+# Total tracked IPs
+sqlite3 /data/ton-iot-project/fresh_start/data/threat_cache.db \
+  "SELECT COUNT(*) AS total_ips FROM ip_intel;"
+
+# Check MITRE ATT&CK technique cache
+sqlite3 /data/ton-iot-project/fresh_start/data/threat_cache.db \
+  "SELECT COUNT(*) AS techniques FROM mitre_attack;"
+
+# Look up a specific IP
+sqlite3 /data/ton-iot-project/fresh_start/data/threat_cache.db \
+  "SELECT * FROM ip_intel WHERE ip = '203.0.113.50';"
+
+# Check when MITRE STIX feed was last refreshed
+sqlite3 /data/ton-iot-project/fresh_start/data/threat_cache.db \
+  "SELECT datetime(value, 'unixepoch') AS mitre_updated FROM meta WHERE key = 'mitre_updated_at';"
+
+------------------------------------------------------
+6. VIEW LOGS
+------------------------------------------------------
+
+# Live logs (follow mode, Ctrl+C to stop)
+sudo journalctl -u clawdbot-agent -f
+sudo journalctl -u ids-api -f
+sudo journalctl -u ids-dashboard -f
+sudo journalctl -u ollama -f
+
+# Last N lines
+sudo journalctl -u clawdbot-agent --no-pager | tail -50
+sudo journalctl -u ids-api --no-pager | tail -50
+sudo journalctl -u ids-dashboard --no-pager | tail -50
+
+# Logs since last boot
+sudo journalctl -u ids-api -b
+
+# Logs from a specific time
+sudo journalctl -u clawdbot-agent --since "2026-04-05 13:00"
+
+# Attack log (JSONL — one JSON object per line)
+cat /data/ton-iot-project/fresh_start/logs/attacks.jsonl
+
+# Pretty-print last attack
+tail -1 /data/ton-iot-project/fresh_start/logs/attacks.jsonl | python3 -m json.tool
+
+# Actions log (agent start/stop events)
+cat /data/ton-iot-project/fresh_start/logs/actions.jsonl
+
+# Audit log (model predictions + triage)
+tail -1 /data/ton-iot-project/fresh_start/artifacts/audit/analyze_events.jsonl | python3 -m json.tool
+
+------------------------------------------------------
+6b. CLEAR LOGS
+------------------------------------------------------
+
+# Clear dashboard/agent JSONL logs for a fresh demo/test run.
+# Stop writers first so the files do not get rewritten while truncating.
+cd /data/ton-iot-project/fresh_start
+sudo systemctl stop clawdbot-agent ids-dashboard
+mkdir -p logs artifacts/audit
+truncate -s 0 logs/attacks.jsonl logs/actions.jsonl artifacts/audit/analyze_events.jsonl
+sudo systemctl start clawdbot-agent ids-dashboard
+
+# If truncate fails because of permissions, use sudo and restore ownership.
+sudo truncate -s 0 \
+  /data/ton-iot-project/fresh_start/logs/attacks.jsonl \
+  /data/ton-iot-project/fresh_start/logs/actions.jsonl \
+  /data/ton-iot-project/fresh_start/artifacts/audit/analyze_events.jsonl
+sudo chown adrian:adrian \
+  /data/ton-iot-project/fresh_start/logs/attacks.jsonl \
+  /data/ton-iot-project/fresh_start/logs/actions.jsonl \
+  /data/ton-iot-project/fresh_start/artifacts/audit/analyze_events.jsonl
+
+# Clear systemd journal history globally. This affects all services, not only ClawdBot.
+sudo journalctl --rotate
+sudo journalctl --vacuum-time=1s
+
+# Restart services after a full reset.
+sudo systemctl restart ids-api clawdbot-agent ids-dashboard
+
+------------------------------------------------------
+7. DEPLOY CODE CHANGES (from local Mac)
+------------------------------------------------------
+
+cd /Users/adrian/Desktop/bachelor_thesis/bi-lstm-ton-iot
+
+# Copy application code
+scp -P 64295 -r app clawdbot dashboard tests adrian@100.111.77.70:/data/ton-iot-project/fresh_start/
+
+# Copy service files (if changed)
+scp -P 64295 deploy/ids-api.service deploy/clawdbot-agent.service deploy/ids-dashboard.service adrian@100.111.77.70:/tmp/
+# Then on SVM:
+sudo cp /tmp/ids-api.service /tmp/clawdbot-agent.service /tmp/ids-dashboard.service /etc/systemd/system/
+sudo systemctl daemon-reload
+
+# Restart after deploying
+sudo systemctl restart ids-api clawdbot-agent ids-dashboard
+
+------------------------------------------------------
+8. RUNNING TESTS
+------------------------------------------------------
+
+# On SVM — activate venv first
+source /data/ton-iot-project/venv_h200/bin/activate
+cd /data/ton-iot-project/fresh_start
+
+# Run all tests
+python -m pytest tests/ -v
+
+# Run a specific test file
+python -m pytest tests/test_threat_intel.py -v
+python -m pytest tests/test_agent.py -v
+python -m pytest tests/test_actuator.py -v
+
+# Run a single test by name
+python -m pytest tests/test_threat_intel.py -k "test_badge_known_bad" -v
+
+# On local Mac (from project root)
+cd /Users/adrian/Desktop/bachelor_thesis/bi-lstm-ton-iot
+python -m pytest tests/ -v
+
+------------------------------------------------------
+9. TESTING WITH NMAP (from Mac)
+------------------------------------------------------
+
+# SYN scan over VPN
+sudo nmap -sS -T5 -p 1-1024 100.111.77.70
+
+# Then check attack log on SVM
+cat /data/ton-iot-project/fresh_start/logs/attacks.jsonl
+
+------------------------------------------------------
+10. KEY PATHS
+------------------------------------------------------
+
+Project root:     /data/ton-iot-project/fresh_start
+Python venv:      /data/ton-iot-project/venv_h200
+Model artifacts:  /data/ton-iot-project/fresh_start/artifacts/resnet_transfer
+Logs:             /data/ton-iot-project/fresh_start/logs/
+Audit log:        /data/ton-iot-project/fresh_start/artifacts/audit/analyze_events.jsonl
+Service files:    /etc/systemd/system/{ids-api,clawdbot-agent,ids-dashboard}.service
+Env overrides:    /data/ton-iot-project/fresh_start/.env
+Threat cache DB:  /data/ton-iot-project/fresh_start/data/threat_cache.db
+Dashboard app:    /data/ton-iot-project/fresh_start/dashboard
+LoRA adapter:     /data/ton-iot-project/fresh_start/lora_adapter/
+Training data:    /data/ton-iot-project/fresh_start/data/triage_{train,test}.jsonl
+
+------------------------------------------------------
+11. LORA FINE-TUNING (triage model)
+------------------------------------------------------
+
+# All commands run on SVM with venv activated:
+source /data/ton-iot-project/venv_h200/bin/activate
+cd /data/ton-iot-project/fresh_start
+
+# Step 0: Install training dependencies (one-time)
+pip install -r lora/requirements.txt
+
+# Step 1: Generate synthetic training data
+python -m lora.build_dataset \
+  --out data/triage_train.jsonl \
+  --test-out data/triage_test.jsonl \
+  --n-per-class 50
+
+# Step 2: Train QLoRA adapter (~15-30 min on H200)
+python -m lora.train \
+  --dataset data/triage_train.jsonl \
+  --output lora_adapter \
+  --epochs 3
+
+# Step 3: Export to Ollama
+python -m lora.export_ollama \
+  --adapter lora_adapter \
+  --model-name clawdbot-triage \
+  --quantization q8_0
+
+# Step 4: Evaluate against base model
+python -m lora.evaluate \
+  --test-data data/triage_test.jsonl \
+  --base-model mistral-small:24b \
+  --tuned-model clawdbot-triage
+
+# Step 5: Switch agent to use fine-tuned model
+# Edit /etc/systemd/system/ids-api.service:
+#   Environment="OLLAMA_MODEL_TIER1=clawdbot-triage"
+# Then:
+sudo systemctl daemon-reload
+sudo systemctl restart ids-api clawdbot-agent
+
+# Verify Ollama sees the new model
+ollama list | grep clawdbot-triage
+
+------------------------------------------------------
+12. TROUBLESHOOTING
+------------------------------------------------------
+
+Problem: "timed out" errors in clawdbot-agent logs
+  → Check if Ollama is running: sudo systemctl status ollama
+  → Check if models are loaded: ollama list
+  → Restart Ollama: sudo systemctl restart ollama
+
+Problem: Everything classified as "normal"
+  → Verify model artifacts: ls /data/ton-iot-project/fresh_start/artifacts/resnet_transfer/
+  → Check capture interface is correct: grep INTERFACE /etc/systemd/system/clawdbot-agent.service
+
+Problem: No flows captured
+  → Check interface exists: ip link show wt0
+  → Make sure NetBird VPN is connected: netbird status
+
+Problem: Telegram alerts not sent
+  → Check .env has TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID
+  → Test manually: curl -s "https://api.telegram.org/bot<TOKEN>/sendMessage?chat_id=<CHAT_ID>&text=test"
+
+Problem: Dashboard not loading or charts look broken
+  → Restart dashboard: sudo systemctl restart ids-dashboard
+  → Check logs: sudo journalctl -u ids-dashboard -b --no-pager
+  → Verify health: curl -s http://127.0.0.1:5000/health | python3 -m json.tool
+  → Hard-refresh Chrome with Cmd+Shift+R after CSS/JS deployments
+  → Confirm internet access for Chart.js/Google Fonts CDNs
+
+Problem: Dashboard shows scanning caused by dashboard browsing
+  → Confirm ports 5000/8000 are ignored: grep TON_IOT_DASHBOARD_IGNORE_PORTS /etc/systemd/system/ids-dashboard.service
+  → Confirm ClawdBot management ports include 5000/8000 in logs
+  → Restart both services: sudo systemctl restart clawdbot-agent ids-dashboard
+
+Problem: Service won't start
+  → Check for syntax errors: sudo systemctl status ids-api
+  → Check full logs: sudo journalctl -u ids-api -b --no-pager

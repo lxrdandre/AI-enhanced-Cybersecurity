@@ -242,6 +242,40 @@ class TestOllamaTriage:
 
         assert call_count["n"] == 2
 
+    def test_primary_unknown_uses_tier2_directly(self):
+        svc = _make_ollama_svc()
+        pred = {"predicted_label": "unknown", "confidence": 0.40}
+        record = {"proto": "tcp"}
+
+        with patch.object(svc, "_ollama_chat", return_value=MOCK_OLLAMA_RESPONSE) as mock_chat:
+            triage, llm_error = svc.triage_predictions(
+                predictions=[pred],
+                records=[record],
+                context={"unknown_priority": "primary"},
+            )
+
+        assert llm_error is None
+        assert mock_chat.call_count == 1
+        assert mock_chat.call_args.kwargs["model"] == "llama3.1:70b-instruct-q8_0"
+        assert triage[0]["llm_reclassified"] is True
+
+    def test_secondary_unknown_uses_tier1_only(self):
+        svc = _make_ollama_svc()
+        pred = {"predicted_label": "unknown", "confidence": 0.40}
+        record = {"proto": "tcp"}
+
+        with patch.object(svc, "_ollama_chat", return_value=MOCK_OLLAMA_RESPONSE) as mock_chat:
+            triage, llm_error = svc.triage_predictions(
+                predictions=[pred],
+                records=[record],
+                context={"unknown_priority": "secondary"},
+            )
+
+        assert llm_error is None
+        assert mock_chat.call_count == 1
+        assert mock_chat.call_args.kwargs["model"] == "mistral-small:24b"
+        assert triage[0]["llm_reclassified"] is True
+
     def test_tier2_failure_falls_back_to_tier1(self):
         """If tier-2 fails, tier-1 result is kept."""
         svc = _make_ollama_svc()
@@ -300,3 +334,50 @@ class TestOllamaTriage:
         assert parsed["task"] == "SOC triage and MITRE enrichment"
         assert parsed["classifier_prediction"] == pred
         assert parsed["context"] == context
+
+    def test_stix_context_injected_when_threat_cache_present(self):
+        """When a threat_cache is provided, STIX techniques are injected into the prompt context."""
+        fake_techniques = [
+            {"id": "T1595", "name": "Active Scanning", "tactics": ["reconnaissance"], "platforms": ["Linux"]},
+            {"id": "T1046", "name": "Network Service Discovery", "tactics": ["discovery"], "platforms": ["Linux"]},
+        ]
+        mock_cache = MagicMock()
+        mock_cache.techniques_for_tactics.return_value = fake_techniques
+
+        svc = _make_ollama_svc(threat_cache=mock_cache)
+        pred = {"predicted_label": "scanning", "confidence": 0.95}
+        record = {"proto": "tcp"}
+
+        captured_prompts = []
+
+        def mock_chat(*, model, prompt_text):
+            captured_prompts.append(prompt_text)
+            return MOCK_OLLAMA_RESPONSE
+
+        with patch.object(svc, "_ollama_chat", side_effect=mock_chat):
+            svc.triage_predictions(predictions=[pred], records=[record], context=None)
+
+        assert len(captured_prompts) == 1
+        prompt_data = json.loads(captured_prompts[0])
+        assert "mitre_stix_techniques" in prompt_data["context"]
+        assert len(prompt_data["context"]["mitre_stix_techniques"]) == 2
+        assert prompt_data["context"]["mitre_stix_techniques"][0]["id"] == "T1595"
+        mock_cache.techniques_for_tactics.assert_called_once_with(["Reconnaissance"], limit=15)
+
+    def test_no_stix_context_when_threat_cache_none(self):
+        """Without a threat_cache, context is not enriched with STIX data."""
+        svc = _make_ollama_svc(threat_cache=None)
+        pred = {"predicted_label": "scanning", "confidence": 0.95}
+        record = {"proto": "tcp"}
+
+        captured_prompts = []
+
+        def mock_chat(*, model, prompt_text):
+            captured_prompts.append(prompt_text)
+            return MOCK_OLLAMA_RESPONSE
+
+        with patch.object(svc, "_ollama_chat", side_effect=mock_chat):
+            svc.triage_predictions(predictions=[pred], records=[record], context=None)
+
+        prompt_data = json.loads(captured_prompts[0])
+        assert "mitre_stix_techniques" not in prompt_data.get("context", {})

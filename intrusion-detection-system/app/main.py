@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import logging
+import os
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 
 from app.audit import AuditLogger
 from app.config import Settings
-from app.model_registry import load_artifacts
+from app.model_registry import load_artifacts, load_domain_router, load_model_file
 from app.schemas import AnalyzeRequest, AnalyzeResponse, MetadataResponse, PredictRequest, PredictResponse
 from app.service import InferenceService
 from app.triage import TriageService, _default_triage_item
+from clawdbot.threat_intel import ThreatCache
 
 log = logging.getLogger(__name__)
 
@@ -23,12 +25,18 @@ try:
         features_filename=settings.features_filename,
         calibration_filename=settings.calibration_filename,
     )
+    domain_router = load_domain_router(artifact_dir=settings.artifact_dir)
+    original_model = load_model_file(
+        os.path.join(settings.base_artifact_dir, settings.base_model_filename)
+    )
     inference_service = InferenceService(
         model=model,
+        original_model=original_model,
         pipeline=pipeline,
         final_features=final_features,
         artifact_dir=settings.artifact_dir,
         calibration=calibration,
+        domain_router=domain_router,
         unknown_confidence_threshold=settings.unknown_confidence_threshold,
     )
 except Exception as exc:
@@ -38,6 +46,10 @@ else:
     startup_error = None
 
 audit_logger = AuditLogger(log_path=settings.audit_log_path)
+
+# Open STIX cache for read-only MITRE lookups in prompts (shared DB with agent)
+threat_cache = ThreatCache(db_path=settings.threat_cache_db)
+
 triage_service = TriageService(
     api_key=settings.gemini_api_key,
     model=settings.triage_model,
@@ -47,6 +59,7 @@ triage_service = TriageService(
     ollama_model_tier2=settings.ollama_model_tier2,
     ollama_escalation_confidence=settings.ollama_escalation_confidence,
     triage_backend=settings.triage_backend,
+    threat_cache=threat_cache,
 )
 
 app = FastAPI(title="TON IoT IDS Inference API", version="0.1.0")
@@ -110,12 +123,13 @@ def analyze(payload: AnalyzeRequest, background_tasks: BackgroundTasks) -> Analy
             records=payload.records,
             predictions=predictions,
             triage=fallback_triage,
-            llm_enabled=triage_service.enabled,
+            llm_enabled=settings.background_triage_enabled and triage_service.enabled,
             llm_error=None,
         )
 
-        # Fire Ollama enrichment in background (non-blocking)
-        if triage_service.enabled:
+        # Background LLM enrichment is opt-in; ClawdBot handles incident-level
+        # unknown classification to avoid per-flow Ollama storms.
+        if settings.background_triage_enabled and triage_service.enabled:
             background_tasks.add_task(
                 _background_triage,
                 predictions=predictions,
@@ -133,7 +147,7 @@ def analyze(payload: AnalyzeRequest, background_tasks: BackgroundTasks) -> Analy
         predictions=predictions,
         triage=fallback_triage,
         audit_id=audit_id,
-        llm_enabled=triage_service.enabled,
+        llm_enabled=settings.background_triage_enabled and triage_service.enabled,
         llm_error=None,
     )
 

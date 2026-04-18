@@ -1,0 +1,20 @@
+=== TON-IoT Never-Seen Holdout Validation ===
+CSV: /data/ton-iot-project/fresh_start/data/toniot_holdout_validation.csv
+Model: /data/ton-iot-project/fresh_start/artifacts/resnet_base/resnet_model.keras
+Pipeline: /data/ton-iot-project/fresh_start/artifacts/resnet_base/preprocessing_pipeline.pkl
+Rows: 65820
+Labels: {'normal': 10000, 'injection': 5820, 'password': 10000, 'xss': 10000, 'scanning': 10000, 'backdoor': 10000, 'dos_ddos': 10000}
+
+              precision    recall  f1-score   support
+
+    backdoor     0.9927    1.0000    0.9963     10000
+    dos_ddos     0.8998    0.9900    0.9428     10000
+   injection     0.9581    0.3344    0.4957      5820
+      normal     0.9679    0.9524    0.9601     10000
+    password     0.9581    0.9918    0.9746     10000
+    scanning     0.9413    0.9662    0.9536     10000
+         xss     0.8105    0.9934    0.8927     10000
+
+    accuracy                         0.9250     65820
+   macro avg     0.9326    0.8897    0.8880     65820
+weighted avg     0.9310    0.9250    0.9129     65820

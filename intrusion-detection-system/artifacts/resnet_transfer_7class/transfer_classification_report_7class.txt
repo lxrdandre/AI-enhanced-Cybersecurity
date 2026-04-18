@@ -1,0 +1,18 @@
+=== Custom expert test ===
+Base model: /data/ton-iot-project/fresh_start/artifacts/resnet_base/resnet_model.keras
+Custom data: /data/ton-iot-project/fresh_start/data/custom/tpot_finetune.csv
+Classes: ['backdoor', 'dos_ddos', 'injection', 'normal', 'password', 'scanning', 'xss']
+
+              precision    recall  f1-score   support
+
+    backdoor     1.0000    0.9995    0.9997      2000
+    dos_ddos     0.9970    0.9995    0.9983      2000
+   injection     1.0000    1.0000    1.0000      2000
+      normal     0.9995    1.0000    0.9998      2000
+    password     0.9995    1.0000    0.9998      2000
+    scanning     0.9995    0.9960    0.9977      2000
+         xss     0.9995    1.0000    0.9998      2000
+
+    accuracy                         0.9993     14000
+   macro avg     0.9993    0.9993    0.9993     14000
+weighted avg     0.9993    0.9993    0.9993     14000

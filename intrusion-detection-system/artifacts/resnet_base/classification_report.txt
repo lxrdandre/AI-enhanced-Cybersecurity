@@ -1,0 +1,17 @@
+=== ResNet Base Evaluation ===
+Model: /data/ton-iot-project/fresh_start/artifacts/resnet_base/resnet_model.keras
+Loss: {'name': 'CategoricalFocalCrossentropy', 'gamma': 2.0, 'alpha_clip': [0.5, 5.0], 'alpha_min': 1.0, 'alpha_mean': 1.0, 'alpha_max': 1.0}
+
+              precision    recall  f1-score   support
+
+    backdoor       0.99      1.00      1.00    101623
+    dos_ddos       0.99      0.98      0.99    140000
+   injection       0.98      0.96      0.97     90532
+      normal       0.99      0.98      0.99    137306
+    password       0.98      0.99      0.99    140000
+    scanning       0.99      0.98      0.99    140000
+         xss       0.97      0.99      0.98    140000
+
+    accuracy                           0.98    889461
+   macro avg       0.98      0.98      0.98    889461
+weighted avg       0.98      0.98      0.98    889461

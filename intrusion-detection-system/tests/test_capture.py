@@ -103,6 +103,7 @@ class TestFlowTable:
             r = records[0]
             assert r["proto"] == "tcp"
             assert r["src_bytes"] == 200
+            assert "domain" not in r
             assert r["_meta"]["src_ip"] == "1.1.1.1"
             assert r["_meta"]["dst_ip"] == "2.2.2.2"
 
@@ -144,9 +145,9 @@ class TestTrafficCapture:
         mock_sniff.return_value = None
         tc = TrafficCapture(interface="lo")
         tc.start()
-        assert tc._thread is not None
+        assert tc._threads is not None and len(tc._threads) > 0
         tc.stop()
-        assert tc._thread is None
+        assert tc._threads == []
 
     @patch("clawdbot.capture.scapy_sniff")
     def test_harvest_delegates(self, mock_sniff):
