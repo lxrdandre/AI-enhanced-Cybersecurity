@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Model Quality | Threat Intelligence</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+  <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}?v=20260422-1">
+</head>
+<body>
+  <div class="shell">
+    {% include "_sidebar.html" %}
+    <main>
+      <header class="hero"><div><p class="eyebrow">ML observability</p><h1>Model Quality</h1><p class="subhead">Confidence, unknown-rate, route usage, and audit-log quality indicators.</p></div></header>
+      <section class="kpi-grid intel-kpis">
+        <article class="kpi"><span>Predictions</span><strong>{{ quality.predictions }}</strong><small>{{ quality.batches }} analyzed batches</small></article>
+        <article class="kpi"><span>Avg Confidence</span><strong>{{ quality.avg_confidence }}</strong><small>Mean classifier confidence</small></article>
+        <article class="kpi"><span>Unknown Rate</span><strong>{{ quality.unknown_rate }}%</strong><small>Low-confidence/unknown output</small></article>
+        <article class="kpi"><span>LLM Errors</span><strong>{{ quality.llm_errors }}</strong><small>Triage backend failures</small></article>
+      </section>
+      <section class="grid three">
+        <article class="panel"><div class="panel-head"><div><span class="eyebrow">Confidence</span><h2>Distribution</h2></div></div><div class="rank-list">{% for item in quality.confidence_bins %}<div class="rank-row"><span>{{ item.name }}</span><strong>{{ item.value }}</strong></div>{% endfor %}</div></article>
+        <article class="panel"><div class="panel-head"><div><span class="eyebrow">Labels</span><h2>Prediction Mix</h2></div></div><div class="rank-list">{% for item in quality.labels %}<div class="rank-row"><span>{{ item.name }}</span><strong>{{ item.value }}</strong></div>{% endfor %}</div></article>
+        <article class="panel"><div class="panel-head"><div><span class="eyebrow">Routes</span><h2>Model Route Usage</h2></div></div><div class="rank-list">{% for item in quality.routes %}<div class="rank-row"><span>{{ item.name }}</span><strong>{{ item.value }}</strong></div>{% endfor %}</div></article>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

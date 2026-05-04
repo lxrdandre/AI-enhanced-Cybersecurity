@@ -1,0 +1,17 @@
+=== ResNet CIC Public Evaluation ===
+CSV: /data/ton-iot-project/fresh_start/data/cic_public_6class.csv
+Model: /data/ton-iot-project/fresh_start/artifacts/resnet_cic_public/resnet_model.keras
+Loss: {'name': 'CategoricalFocalCrossentropy', 'gamma': 2.0, 'alpha_clip': [0.5, 5.0], 'alpha_min': 1.0, 'alpha_mean': 1.0, 'alpha_max': 1.0}
+
+              precision    recall  f1-score   support
+
+    backdoor       1.00      1.00      1.00     28903
+    dos_ddos       0.99      1.00      1.00     30000
+infiltration       0.98      1.00      0.99     16429
+      normal       1.00      0.98      0.99     30000
+    password       1.00      1.00      1.00     20439
+    scanning       1.00      1.00      1.00     17964
+
+    accuracy                           0.99    143735
+   macro avg       0.99      1.00      0.99    143735
+weighted avg       0.99      0.99      0.99    143735

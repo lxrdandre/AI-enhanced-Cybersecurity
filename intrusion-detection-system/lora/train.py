@@ -26,6 +26,7 @@ os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 
 def main() -> None:
+    """Run the command-line entry point."""
     parser = argparse.ArgumentParser(description="Fine-tune triage LLM with QLoRA")
     parser.add_argument("--dataset", required=True, help="Training JSONL (messages format)")
     parser.add_argument(
@@ -48,14 +49,14 @@ def main() -> None:
         print(f"Dataset not found: {dataset_path}", file=sys.stderr)
         sys.exit(1)
 
-    # ── Lazy imports (heavy dependencies) ────────────────────────────────
+    # -- Lazy imports (heavy dependencies) --------------------------------
     print("Loading libraries...")
     from unsloth import FastLanguageModel
     from datasets import Dataset
     from trl import SFTTrainer, SFTConfig
     import torch
 
-    # Disable caching_allocator_warmup in Transformers 5.5+ — it
+    # Disable caching_allocator_warmup in Transformers 5.5+ - it
     # pre-allocates based on full-precision sizes, causing OOM on
     # quantised models.
     import transformers.modeling_utils as _mu
@@ -64,27 +65,27 @@ def main() -> None:
 
     # Transformers 5.5+ Trainer._move_model_to_device calls model.to()
     # which dequantises bitsandbytes 4-bit weights into full precision,
-    # blowing up 14 GB → 140 GB → OOM.  The quantised model is already
+    # blowing up 14 GB -> 140 GB -> OOM.  The quantised model is already
     # on GPU, so we no-op the move at the *class* level before any
     # trainer is instantiated.
     from transformers import Trainer as _Trainer
     _Trainer._move_model_to_device = lambda self, model, device: None
 
-    # ── Sanity-check: refuse to start unless GPU has enough free VRAM ──
+    # -- Sanity-check: refuse to start unless GPU has enough free VRAM --
     if torch.cuda.is_available():
         free, total = torch.cuda.mem_get_info(0)
         free_gb = free / 1024**3
         print(f"GPU free memory: {free_gb:.1f} GB / {total / 1024**3:.1f} GB")
         if free_gb < 20:
             print(
-                f"ERROR: Only {free_gb:.1f} GB free on GPU — need at least 20 GB.\n"
+                f"ERROR: Only {free_gb:.1f} GB free on GPU - need at least 20 GB.\n"
                 "Kill zombie processes:  sudo nvidia-smi --query-compute-apps=pid "
                 "--format=csv,noheader | sudo xargs -r kill -9",
                 file=sys.stderr,
             )
             sys.exit(1)
 
-    # ── Load model ───────────────────────────────────────────────────────
+    # -- Load model -------------------------------------------------------
     print(f"Loading base model: {args.base_model}")
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=args.base_model,
@@ -93,13 +94,13 @@ def main() -> None:
         load_in_4bit=True,
     )
 
-    # Tell Trainer the model is already placed — prevents .to(device)
-    # which dequantises 4-bit weights → OOM.  See _move_model_to_device:
+    # Tell Trainer the model is already placed - prevents .to(device)
+    # which dequantises 4-bit weights -> OOM.  See _move_model_to_device:
     # if getattr(model, "hf_device_map", None) is not None: return
     if not getattr(model, "hf_device_map", None):
         model.hf_device_map = {"": 0}
 
-    # ── Add LoRA adapter ─────────────────────────────────────────────────
+    # -- Add LoRA adapter -------------------------------------------------
     print(f"Adding LoRA adapter (rank={args.lora_rank})")
     model = FastLanguageModel.get_peft_model(
         model,
@@ -115,7 +116,7 @@ def main() -> None:
         random_state=args.seed,
     )
 
-    # ── Load dataset ─────────────────────────────────────────────────────
+    # -- Load dataset -----------------------------------------------------
     print(f"Loading dataset: {args.dataset}")
     records = []
     with open(args.dataset, encoding="utf-8") as f:
@@ -129,6 +130,7 @@ def main() -> None:
         sys.exit(1)
 
     def _format(example: dict) -> dict:
+        """Format one prompt/response example for training."""
         text = tokenizer.apply_chat_template(
             example["messages"],
             tokenize=False,
@@ -139,7 +141,7 @@ def main() -> None:
     dataset = Dataset.from_list(records).map(_format)
     print(f"Training examples: {len(dataset)}")
 
-    # ── Train ────────────────────────────────────────────────────────────
+    # -- Train ------------------------------------------------------------
     FastLanguageModel.for_training(model)
     use_bf16 = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
 
@@ -169,7 +171,7 @@ def main() -> None:
     stats = trainer.train()
     print(f"\nTraining complete.  Final loss: {stats.training_loss:.4f}")
 
-    # ── Save adapter ─────────────────────────────────────────────────────
+    # -- Save adapter -----------------------------------------------------
     model.save_pretrained(args.output)
     tokenizer.save_pretrained(args.output)
     print(f"LoRA adapter saved to: {args.output}/")

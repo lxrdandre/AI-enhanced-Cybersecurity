@@ -1,0 +1,18 @@
+=== ResNet Edge-IIoTset Final Holdout Evaluation ===
+CSV: /data/datasets/edge_iiotset/processed/edge_iiotset_6class_cap100k.csv
+Model: /data/ton-iot-project/fresh_start/artifacts/resnet_edge_iiotset/resnet_model.keras
+Loss: {'name': 'CategoricalFocalCrossentropy', 'gamma': 2.0, 'alpha_clip': [0.5, 5.0], 'alpha_min': 1.0000001192092896, 'alpha_mean': 1.0000001192092896, 'alpha_max': 1.0000001192092896}
+Holdout: {'enabled': True, 'holdout_size': 0.05, 'stratify': 'type', 'pool_rows': 498618, 'holdout_rows': 26244, 'holdout_counts': {'normal': 5000, 'scanning': 5000, 'injection': 5000, 'dos_ddos': 5000, 'password': 5001, 'backdoor': 1243}}
+
+              precision    recall  f1-score   support
+
+    backdoor     0.9991    0.9445    0.9711      1243
+    dos_ddos     0.8041    0.9564    0.8737      5000
+   injection     0.5502    0.8980    0.6824      5000
+      normal     0.9756    0.9996    0.9875      5000
+    password     0.9174    0.2753    0.4236      5001
+    scanning     0.9278    0.8050    0.8621      5000
+
+    accuracy                         0.7943     26244
+   macro avg     0.8624    0.8131    0.8000     26244
+weighted avg     0.8428    0.7943    0.7755     26244

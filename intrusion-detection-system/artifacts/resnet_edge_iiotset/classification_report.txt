@@ -1,0 +1,17 @@
+=== ResNet Edge-IIoTset Evaluation ===
+CSV: /data/datasets/edge_iiotset/processed/edge_iiotset_6class_cap100k.csv
+Model: /data/ton-iot-project/fresh_start/artifacts/resnet_edge_iiotset/resnet_model.keras
+Loss: {'name': 'CategoricalFocalCrossentropy', 'gamma': 2.0, 'alpha_clip': [0.5, 5.0], 'alpha_min': 1.0000001192092896, 'alpha_mean': 1.0000001192092896, 'alpha_max': 1.0000001192092896}
+
+              precision    recall  f1-score   support
+
+    backdoor     0.9991    1.0000    0.9995      3271
+    dos_ddos     0.9691    0.9453    0.9571      7426
+   injection     0.7656    0.9608    0.8522      5991
+      normal     0.9997    1.0000    0.9999      7664
+    password     0.9384    0.6598    0.7748      5076
+    scanning     0.9565    0.9743    0.9653      8441
+
+    accuracy                         0.9317     37869
+   macro avg     0.9381    0.9234    0.9248     37869
+weighted avg     0.9388    0.9317    0.9302     37869

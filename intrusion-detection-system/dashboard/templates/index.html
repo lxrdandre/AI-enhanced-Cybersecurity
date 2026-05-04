@@ -3,35 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>TON-IoT Live Security Dashboard</title>
+  <title>Threat Intelligence Live Security Dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
-  <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}?v=20260418-1">
+  <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}?v=20260422-1">
 </head>
 <body data-refresh="{{ refresh_seconds }}">
   <div class="shell">
-    <aside class="rail">
-      <div class="brand">
-        <span class="brand-mark"></span>
-        <div>
-          <strong>TON-IoT</strong>
-          <small>Command Center</small>
-        </div>
-      </div>
-      <nav>
-        <a class="active" href="#overview">Overview</a>
-        <a href="#pulse">Pulse</a>
-        <a href="#threats">Threats</a>
-        <a href="#routing">Routing</a>
-        <a href="#events">Events</a>
-      </nav>
-      <div class="rail-card">
-        <span>Data Source</span>
-        <strong>ClawdBot + IDS API</strong>
-        <small id="pathText">Loading paths...</small>
-      </div>
-    </aside>
+    {% include "_sidebar.html" %}
 
     <main>
       <header class="hero">
@@ -206,6 +186,7 @@
               <span class="eyebrow">Sources</span>
               <h2>Top Originators</h2>
             </div>
+            <a class="ghost-button" href="{{ url_for('ip_intel') }}">Open IP Intel</a>
           </div>
           <div id="sourcesList" class="rank-list"></div>
         </article>
@@ -227,7 +208,28 @@
             <span class="eyebrow">Latest detections</span>
             <h2>Incident Stream</h2>
           </div>
-          <span class="pill" id="llmErrors">0 LLM errors</span>
+          <div class="panel-actions">
+            <a class="ghost-button" href="{{ url_for('export_incidents') }}">Export CSV</a>
+            <form method="post" action="{{ url_for('clear_logs') }}" onsubmit="return confirm('Are you sure you want to clear the incident, action, and audit logs?');">
+              <input type="hidden" name="next" value="{{ request.path }}">
+              <button class="ghost-button danger-button" type="submit">Clear Logs</button>
+            </form>
+            <span class="pill" id="llmErrors">0 LLM errors</span>
+          </div>
+        </div>
+        <div class="filter-bar">
+          <input class="filter-input" id="incidentSearch" type="search" placeholder="Search IP, label, port, summary...">
+          <select class="filter-input" id="incidentSeverity">
+            <option value="">All severities</option>
+            <option value="critical">Critical</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="review">Review</option>
+            <option value="low">Low</option>
+          </select>
+          <select class="filter-input" id="incidentLabel">
+            <option value="">All labels</option>
+          </select>
         </div>
         <div class="table-wrap">
           <table>
@@ -271,6 +273,6 @@
   <div id="telegramToastStack" class="toast-stack" aria-live="polite" aria-atomic="false"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
-  <script src="{{ url_for('static', filename='dashboard.js') }}?v=20260418-1"></script>
+  <script src="{{ url_for('static', filename='dashboard.js') }}?v=20260418-3"></script>
 </body>
 </html>

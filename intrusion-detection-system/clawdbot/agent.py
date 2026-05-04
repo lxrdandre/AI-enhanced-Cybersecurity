@@ -1,4 +1,4 @@
-"""ClawdBot orchestrator — capture → IDS API → Telegram alerting loop."""
+"""ClawdBot orchestrator - capture -> IDS API -> Telegram alerting loop."""
 
 from __future__ import annotations
 
@@ -11,10 +11,13 @@ import time
 import urllib.error
 import urllib.request
 from collections import Counter
+from html import escape
 
-from app.triage import TriageService
+from app.triage import TriageService, canon_label
 from clawdbot.actuator import Actuator, _is_whitelisted
+from clawdbot.control_plane import complete_firewall_request, load_protected_ips, pending_firewall_requests
 from clawdbot.capture import TrafficCapture
+from clawdbot.flow_roles import is_protected_ip, normalize_flow_roles, parse_ip_csv
 from clawdbot.telegram import TelegramNotifier
 from clawdbot.threat_intel import ThreatIntel
 
@@ -27,6 +30,7 @@ class EventLogger:
     """Append-only JSONL logger for attack events and actions taken."""
 
     def __init__(self, log_dir: str):
+        """Initialize the event logger instance."""
         self.log_dir = log_dir
         os.makedirs(self.log_dir, exist_ok=True)
         self._attacks_path = os.path.join(log_dir, "attacks.jsonl")
@@ -93,6 +97,7 @@ class EventLogger:
         self._append(self._actions_path, event)
 
     def _append(self, path: str, event: dict) -> None:
+        """Append append."""
         try:
             with open(path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(event, ensure_ascii=False) + "\n")
@@ -101,6 +106,7 @@ class EventLogger:
 
 
 def _env(key: str, default: str = "") -> str:
+    """Read an environment variable with a default value."""
     return os.environ.get(key, default)
 
 
@@ -138,6 +144,8 @@ SCAN_MIN_UNIQUE_PORTS = 10
 SCAN_MIN_UNIQUE_HOSTS = 5
 DDOS_MIN_FLOWS_PER_TARGET = 50
 DDOS_MIN_UNIQUE_SOURCES = 5
+LLM_DOUBLE_CHECK_DELAY_SECONDS = 60
+LLM_DOUBLE_CHECK_MAX_DETECTIONS = 256
 
 
 def _parse_mgmt_ports(csv: str) -> frozenset[int]:
@@ -151,6 +159,7 @@ def _parse_mgmt_ports(csv: str) -> frozenset[int]:
 
 
 def _is_management_record(record: dict, whitelist, mgmt_ports: frozenset[int]) -> bool:
+    """Return whether management record."""
     meta = record.get("_meta") or {}
     src = meta.get("src_ip", "")
     dst = meta.get("dst_ip", "")
@@ -165,10 +174,17 @@ def _is_management_record(record: dict, whitelist, mgmt_ports: frozenset[int]) -
 
 
 def _detection_label(det: dict) -> str:
-    return str(det["triage"].get("label") or det["prediction"].get("predicted_label", "unknown"))
+    """Return the effective detection label for a detection."""
+    return canon_label(det["triage"].get("label") or det["prediction"].get("predicted_label", "unknown"))
+
+
+def _prediction_label(det: dict) -> str:
+    """Return the raw model prediction label for a detection."""
+    return canon_label((det.get("prediction") or {}).get("predicted_label", "unknown"))
 
 
 def _incident_summary(detections: list[dict]) -> dict:
+    """Summarize primary and secondary labels for an incident."""
     primary_labels = [
         _detection_label(det)
         for det in detections
@@ -192,20 +208,26 @@ def _incident_summary(detections: list[dict]) -> dict:
     }
 
 
-def _incident_summary_record(detections: list[dict]) -> dict:
-    srcs = Counter(_flow_field(det, "src_ip", "") for det in detections)
-    dsts = Counter(_flow_field(det, "dst_ip", "") for det in detections)
-    ports = Counter(_port_int(_flow_field(det, "dst_port")) for det in detections)
+def _incident_summary_record(
+    detections: list[dict],
+    protected_ips: frozenset[str] = frozenset(),
+) -> dict:
+    """Build the serializable incident summary payload."""
+    roles = [normalize_flow_roles(det.get("flow_meta") or {}, protected_ips) for det in detections]
+    srcs = Counter(role.get("originator_ip", "") for role in roles)
+    dsts = Counter(role.get("target_ip", "") for role in roles)
+    ports = Counter(_port_int(role.get("target_port")) for role in roles)
     protos = Counter(str(_flow_field(det, "proto", "")).lower() for det in detections)
     labels = Counter(_detection_label(det) for det in detections)
     samples = []
     for det in detections[:8]:
         meta = det.get("flow_meta") or {}
+        role = normalize_flow_roles(meta, protected_ips)
         samples.append({
-            "src_ip": meta.get("src_ip"),
-            "dst_ip": meta.get("dst_ip"),
-            "src_port": meta.get("src_port"),
-            "dst_port": meta.get("dst_port"),
+            "src_ip": role.get("originator_ip"),
+            "dst_ip": role.get("target_ip"),
+            "src_port": role.get("originator_port"),
+            "dst_port": role.get("target_port"),
             "proto": meta.get("proto"),
             "model_label": _detection_label(det),
             "confidence": (det.get("prediction") or {}).get("confidence"),
@@ -223,23 +245,65 @@ def _incident_summary_record(detections: list[dict]) -> dict:
 
 
 def _flow_field(det: dict, field: str, default=None):
+    """Read a flow metadata field from normalized alternatives."""
     meta = det.get("flow_meta") or {}
     return meta.get(field, default)
 
 
 def _port_int(value) -> int | None:
+    """Parse a port value into an integer, or zero on failure."""
     try:
         return int(value)
     except (TypeError, ValueError):
         return None
 
 
+def _process_firewall_requests(
+    *,
+    queue_path: str,
+    actuator: Actuator,
+    event_log: EventLogger,
+    protected_ips: frozenset[str],
+) -> None:
+    """Apply pending dashboard firewall requests through the actuator."""
+    if not queue_path:
+        return
+    for req in pending_firewall_requests(queue_path):
+        ip = str(req.get("ip", "")).strip()
+        action = str(req.get("action", "")).lower()
+        reason = str(req.get("reason") or "dashboard")
+        if action == "block" and is_protected_ip(ip, protected_ips):
+            result = {
+                "action": "block",
+                "ip": ip,
+                "reason": reason,
+                "applied": False,
+                "skipped_reason": "protected_ip",
+            }
+        elif action == "block":
+            result = actuator.block(ip, ttl=_port_int(req.get("ttl")) or None, reason=reason)
+        elif action == "unblock":
+            result = actuator.unblock(ip, reason=reason)
+        else:
+            result = {
+                "action": action or "unknown",
+                "ip": ip,
+                "reason": reason,
+                "applied": False,
+                "skipped_reason": "unknown_action",
+            }
+        complete_firewall_request(queue_path, str(req.get("id")), result)
+        event_log.log_action(action="firewall_manual", detail={"request": req, "result": result})
+
+
 def _strip_mitre(triage: dict) -> None:
+    """Remove MITRE mapping from secondary context detections."""
     triage["mitre_tactics"] = []
     triage["mitre_techniques"] = []
 
 
 def _mark_secondary(det: dict, reason: str) -> None:
+    """Mark a detection as secondary incident context."""
     triage = det["triage"]
     triage["incident_role"] = "secondary"
     triage["secondary_reason"] = reason
@@ -248,10 +312,12 @@ def _mark_secondary(det: dict, reason: str) -> None:
 
 
 def _looks_like_scan(detections: list[dict]) -> bool:
+    """Return True when a label indicates scan behavior."""
     return bool(_scan_sources(detections))
 
 
 def _scan_sources(detections: list[dict]) -> set[str]:
+    """Return unique source IPs involved in scan detections."""
     by_src: dict[str, dict[str, set]] = {}
     for det in detections:
         src = _flow_field(det, "src_ip")
@@ -272,6 +338,7 @@ def _scan_sources(detections: list[dict]) -> set[str]:
 
 
 def _promote_scan(det: dict) -> None:
+    """Promote scan."""
     det["triage"].update(
         {
             "label": "scanning",
@@ -297,6 +364,7 @@ def _promote_scan(det: dict) -> None:
 
 
 def _has_password_evidence(detections: list[dict]) -> bool:
+    """Return whether password evidence."""
     attempts: Counter[tuple[str, str, int]] = Counter()
     for det in detections:
         if _detection_label(det) != "password":
@@ -310,6 +378,7 @@ def _has_password_evidence(detections: list[dict]) -> bool:
 
 
 def _has_ddos_evidence(detections: list[dict]) -> bool:
+    """Return whether ddos evidence."""
     targets: dict[tuple[str, int], set[str]] = {}
     counts: Counter[tuple[str, int]] = Counter()
     for det in detections:
@@ -331,6 +400,7 @@ def _has_ddos_evidence(detections: list[dict]) -> bool:
 
 
 def _apply_incident_rules(detections: list[dict]) -> list[dict]:
+    """Apply incident-level promotion and suppression rules."""
     if not detections:
         return detections
 
@@ -374,6 +444,7 @@ def _classify_primary_unknown_incident(
     *,
     triage_service: TriageService,
 ) -> None:
+    """Ask the LLM to classify the primary unknown incident."""
     if not detections or not triage_service.enabled:
         return
 
@@ -428,6 +499,232 @@ def _classify_primary_unknown_incident(
         det["triage"]["incident_primary_label"] = new_label
 
 
+def _model_primary_prediction(detections: list[dict]) -> dict | None:
+    """Return model data for primary prediction."""
+    summary = _incident_summary(detections)
+    primary_label = canon_label(summary["primary_label"])
+    if primary_label in {"normal", "unknown"}:
+        return None
+
+    candidates = [
+        det for det in detections
+        if det["triage"].get("incident_role") == "primary"
+        and _prediction_label(det) == primary_label
+    ]
+    if not candidates:
+        candidates = [det for det in detections if _prediction_label(det) == primary_label]
+    if not candidates:
+        return None
+
+    confidence = max(float((det.get("prediction") or {}).get("confidence", 0.0) or 0.0) for det in candidates)
+    probability_sums: Counter[str] = Counter()
+    probability_count = 0
+    for det in candidates:
+        probs = (det.get("prediction") or {}).get("probabilities") or {}
+        if not isinstance(probs, dict):
+            continue
+        probability_count += 1
+        for label, value in probs.items():
+            try:
+                probability_sums[canon_label(label)] += float(value)
+            except (TypeError, ValueError):
+                pass
+
+    probabilities = {
+        label: float(total) / probability_count
+        for label, total in probability_sums.items()
+    } if probability_count else {}
+
+    return {
+        "predicted_label": primary_label,
+        "confidence": confidence,
+        "probabilities": probabilities,
+    }
+
+
+def _double_check_key(
+    detections: list[dict],
+    *,
+    protected_ips: frozenset[str],
+    now: float,
+) -> str:
+    """Build a stable key for deferred LLM double checks."""
+    summary = _incident_summary(detections)
+    record = _incident_summary_record(detections, protected_ips)
+    bucket = int(now // ALERT_COOLDOWN_SECONDS)
+    src = ",".join(record["top_sources"][:3])
+    dst = ",".join(record["top_destinations"][:3])
+    ports = ",".join(str(port) for port in record["top_destination_ports"][:6])
+    return f"{bucket}:{summary['primary_label']}:{src}:{dst}:{ports}"
+
+
+def _trim_detections(detections: list[dict]) -> list[dict]:
+    """Keep the detections needed for incident-level double checks."""
+    if len(detections) <= LLM_DOUBLE_CHECK_MAX_DETECTIONS:
+        return detections
+    half = LLM_DOUBLE_CHECK_MAX_DETECTIONS // 2
+    return detections[:half] + detections[-half:]
+
+
+def _snapshot_detections(detections: list[dict]) -> list[dict]:
+    """Capture detection state for deferred LLM review."""
+    return [
+        {
+            "prediction": dict(det.get("prediction") or {}),
+            "triage": dict(det.get("triage") or {}),
+            "flow_meta": dict(det.get("flow_meta") or {}),
+            "record": dict(det.get("record") or {}),
+        }
+        for det in detections
+    ]
+
+
+def _schedule_llm_double_check(
+    pending: dict[str, dict],
+    *,
+    detections: list[dict],
+    incident_id: str,
+    protected_ips: frozenset[str],
+    now: float,
+    delay_seconds: int,
+) -> bool:
+    """Schedule an incident for delayed LLM verification."""
+    if delay_seconds <= 0:
+        return False
+
+    prediction = _model_primary_prediction(detections)
+    if prediction is None:
+        return False
+
+    key = _double_check_key(detections, protected_ips=protected_ips, now=now)
+    snapshot = _snapshot_detections(detections)
+    if key in pending:
+        item = pending[key]
+        item["detections"] = _trim_detections(item["detections"] + snapshot)
+        item["prediction"] = _model_primary_prediction(item["detections"]) or prediction
+        item["incident_ids"].add(incident_id)
+        return True
+
+    pending[key] = {
+        "key": key,
+        "incident_ids": {incident_id},
+        "scheduled_at": now,
+        "due_at": now + delay_seconds,
+        "delay_seconds": delay_seconds,
+        "prediction": prediction,
+        "detections": _trim_detections(snapshot),
+    }
+    return True
+
+
+def _format_double_check_update(item: dict, triage: dict, verdict: str) -> str:
+    """Format double check update for display or logging."""
+    prediction = item["prediction"]
+    model_label = canon_label(prediction.get("predicted_label", "unknown"))
+    llm_label = canon_label(triage.get("label", "unknown"))
+    lines = [
+        "<b>LLM Double-Check</b>",
+        f"Verdict: <b>{escape(verdict)}</b>",
+        f"Model: {escape(model_label)} ({float(prediction.get('confidence', 0.0) or 0.0):.2f})",
+        f"LLM: {escape(llm_label)}",
+    ]
+    if triage.get("summary"):
+        lines.append(escape(str(triage["summary"])))
+    actions = triage.get("next_actions") or []
+    if actions:
+        lines.append("")
+        lines.append("<b>Actions</b>")
+        for idx, action in enumerate(actions[:4], 1):
+            lines.append(f"{idx}. {escape(str(action))}")
+    lines.append(f"<i>Source: {escape(str(triage.get('source', 'unknown')))}</i>")
+    return "\n".join(lines)
+
+
+def _process_due_llm_double_checks(
+    pending: dict[str, dict],
+    *,
+    now: float,
+    triage_service: TriageService,
+    event_log: EventLogger,
+    protected_ips: frozenset[str],
+    notifier: TelegramNotifier,
+) -> None:
+    """Run due delayed LLM verification jobs."""
+    if not pending or not triage_service.enabled:
+        return
+
+    for key in [key for key, item in pending.items() if item["due_at"] <= now]:
+        item = pending.pop(key)
+        detections = item["detections"]
+        prediction = item["prediction"]
+        model_label = canon_label(prediction.get("predicted_label", "unknown"))
+        primary = [
+            det for det in detections
+            if det["triage"].get("incident_role") == "primary"
+            and _prediction_label(det) == model_label
+        ] or detections
+        context = {
+            "source": "clawdbot",
+            "classification_scope": "incident",
+            "verification_mode": "delayed_double_check",
+            "settling_window_seconds": item["delay_seconds"],
+            "incident_primary_label": model_label,
+        }
+        try:
+            triage_items, llm_error = triage_service.triage_predictions(
+                predictions=[prediction],
+                records=[_incident_summary_record(primary, protected_ips)],
+                context=context,
+            )
+        except Exception as exc:
+            log.warning("LLM double-check failed for %s: %s", key, exc)
+            event_log.log_action(
+                action="llm_double_check_failed",
+                detail={"key": key, "incident_ids": sorted(item["incident_ids"]), "error": str(exc)},
+            )
+            continue
+
+        triage = triage_items[0] if triage_items else {}
+        llm_label = canon_label(triage.get("label", "unknown"))
+        if llm_error:
+            verdict = "fallback"
+        elif llm_label == model_label:
+            verdict = "confirmed"
+        elif llm_label == "unknown":
+            verdict = "inconclusive"
+        else:
+            verdict = "changed"
+
+        telegram_sent = False
+        if verdict in {"changed", "inconclusive"} and notifier.enabled:
+            telegram_sent = notifier.send_message(_format_double_check_update(item, triage, verdict))
+
+        event_log.log_action(
+            action="llm_double_check",
+            detail={
+                "key": key,
+                "incident_ids": sorted(item["incident_ids"]),
+                "verdict": verdict,
+                "model_label": model_label,
+                "llm_label": llm_label,
+                "model_confidence": prediction.get("confidence"),
+                "llm_source": triage.get("source"),
+                "llm_error": llm_error,
+                "summary": triage.get("summary", ""),
+                "next_actions": triage.get("next_actions", []),
+                "flow_count": len(detections),
+                "telegram_sent": telegram_sent,
+            },
+        )
+        log.info(
+            "LLM double-check %s: model=%s llm=%s verdict=%s",
+            key,
+            model_label,
+            llm_label,
+            verdict,
+        )
+
+
 def run(
     *,
     interface: str,
@@ -449,13 +746,24 @@ def run(
     virustotal_key: str = "",
     otx_key: str = "",
     threat_intel_api_ttl: int = 86400,
+    protected_ips: str = "",
+    protected_ips_file: str = "",
+    firewall_queue: str = "",
+    llm_double_check_delay: int = LLM_DOUBLE_CHECK_DELAY_SECONDS,
 ) -> None:
-    """Main capture → analyze → alert loop."""
+    """Main capture -> analyze -> alert loop."""
+
+    project_data_dir = os.path.abspath(os.path.join(log_dir, "..", "data"))
+    protected_ips_file = protected_ips_file or os.path.join(project_data_dir, "protected_ips.json")
+    firewall_queue = firewall_queue or os.path.join(project_data_dir, "firewall_requests.json")
+    base_protected_ips = parse_ip_csv(protected_ips)
+    protected_ip_set = load_protected_ips(protected_ips_file, base_protected_ips)
 
     notifier = TelegramNotifier(
         bot_token=bot_token,
         chat_id=chat_id,
         severity_threshold=severity_threshold,
+        protected_ips=protected_ip_set,
     )
 
     actuator = Actuator(
@@ -474,6 +782,12 @@ def run(
         otx_key=otx_key,
         api_cache_ttl=threat_intel_api_ttl,
     )
+    removed_protected = intel.cache.delete_ips(protected_ip_set)
+    if removed_protected:
+        log.info(
+            "Removed %d protected server IP(s) from threat-intel reputation cache",
+            removed_protected,
+        )
     incident_triage = TriageService(
         api_key=_env("GEMINI_API_KEY"),
         model=_env("TON_IOT_TRIAGE_MODEL", "gemini-2.0-flash"),
@@ -491,9 +805,10 @@ def run(
     shutdown = False
 
     def _handle_signal(signum, _frame):
+        """Record shutdown signals for the agent loop."""
         nonlocal shutdown
         sig_name = signal.Signals(signum).name
-        log.info("Received %s — shutting down", sig_name)
+        log.info("Received %s - shutting down", sig_name)
         shutdown = True
 
     signal.signal(signal.SIGINT, _handle_signal)
@@ -514,22 +829,42 @@ def run(
         "harvest_interval": harvest_interval, "telegram_enabled": notifier.enabled,
         "actuator_enabled": actuator.enabled, "actuator_dry_run": actuator.dry_run,
         "mgmt_ports_ignored": sorted(mgmt_ports),
+        "llm_double_check_delay": llm_double_check_delay,
     })
 
     actuator.setup()
     intel.setup()
     capture.start()
 
-    # Cooldown tracker: frozenset of labels → last alert timestamp
+    # Cooldown tracker: frozenset of labels -> last alert timestamp
     _last_alert_ts: dict[frozenset[str], float] = {}
+    _pending_llm_double_checks: dict[str, dict] = {}
 
     try:
         while not shutdown:
             time.sleep(harvest_interval)
 
+            protected_ip_set = load_protected_ips(protected_ips_file, base_protected_ips)
+            notifier.protected_ips = protected_ip_set
+            intel.cache.delete_ips(protected_ip_set)
+            _process_due_llm_double_checks(
+                _pending_llm_double_checks,
+                now=time.time(),
+                triage_service=incident_triage,
+                event_log=event_log,
+                protected_ips=protected_ip_set,
+                notifier=notifier,
+            )
+            _process_firewall_requests(
+                queue_path=firewall_queue,
+                actuator=actuator,
+                event_log=event_log,
+                protected_ips=protected_ip_set,
+            )
+
             records = capture.harvest()
             if not records:
-                log.debug("No flows harvested — sleeping")
+                log.debug("No flows harvested - sleeping")
                 continue
 
             harvested_count = len(records)
@@ -544,7 +879,7 @@ def run(
                     ignored_count,
                 )
             if not records:
-                log.debug("No non-management flows harvested — sleeping")
+                log.debug("No non-management flows harvested - sleeping")
                 continue
 
             log.info("Harvested %d flow(s)", len(records))
@@ -556,7 +891,7 @@ def run(
             for batch_start in range(0, len(records), MAX_BATCH_SIZE):
                 batch = records[batch_start : batch_start + MAX_BATCH_SIZE]
                 log.info(
-                    "Sending batch %d–%d of %d to IDS API",
+                    "Sending batch %d-%d of %d to IDS API",
                     batch_start + 1,
                     min(batch_start + MAX_BATCH_SIZE, len(records)),
                     len(records),
@@ -564,7 +899,7 @@ def run(
 
                 response = _post_analyze(api_url, batch, timeout=api_timeout)
                 if response is None:
-                    log.warning("API returned no response — skipping batch")
+                    log.warning("API returned no response - skipping batch")
                     continue
 
                 predictions = response.get("predictions", [])
@@ -576,9 +911,11 @@ def run(
 
                     # Recover flow metadata from the original record
                     flow_meta = batch[i].get("_meta") if i < len(batch) else None
+                    if flow_meta and "proto" not in flow_meta and i < len(batch):
+                        flow_meta = {**flow_meta, "proto": batch[i].get("proto")}
 
                     # Skip management traffic between whitelisted peers
-                    # (e.g. SSH sessions) — but NOT scans or attacks
+                    # (e.g. SSH sessions) - but NOT scans or attacks
                     if flow_meta and _is_management_record({"_meta": flow_meta}, actuator.whitelist, mgmt_ports):
                         log.debug("Skipping management traffic after IDS response (%s)", label)
                         continue
@@ -622,9 +959,10 @@ def run(
                     flow_meta = det.get("flow_meta")
                     label = tri.get("label") or pred.get("predicted_label", "unknown")
 
-                    src_ip = flow_meta.get("src_ip") if flow_meta else None
+                    flow_roles = normalize_flow_roles(flow_meta, protected_ip_set) if flow_meta else {}
+                    src_ip = flow_roles.get("originator_ip") if flow_roles else None
                     reputation = None
-                    if src_ip:
+                    if src_ip and not is_protected_ip(src_ip, protected_ip_set):
                         mitre_ids = [
                             t.get("id", "") for t in tri.get("mitre_techniques", [])
                             if t.get("id", "").startswith("T")
@@ -637,13 +975,15 @@ def run(
                             mitre_technique_ids=mitre_ids,
                         )
                         det["reputation"] = reputation
+                    elif src_ip:
+                        log.debug("Skipping reputation enrichment for protected IP %s", src_ip)
 
                     effective_severity = tri.get("severity", "low")
                     if src_ip and reputation and intel.should_escalate_block(src_ip):
                         if effective_severity == "low":
                             effective_severity = "medium"
                         log.info(
-                            "Escalating block severity for known-bad IP %s: %s → %s",
+                            "Escalating block severity for known-bad IP %s: %s -> %s",
                             src_ip, tri.get("severity", "low"), effective_severity,
                         )
 
@@ -666,6 +1006,15 @@ def run(
                 incident_summary = _incident_summary(all_detections)
                 incident_id = f"{int(now * 1000)}-{incident_summary['primary_label']}"
                 last = _last_alert_ts.get(label_set, 0.0)
+                if incident_triage.enabled:
+                    _schedule_llm_double_check(
+                        _pending_llm_double_checks,
+                        detections=all_detections,
+                        incident_id=incident_id,
+                        protected_ips=protected_ip_set,
+                        now=now,
+                        delay_seconds=llm_double_check_delay,
+                    )
 
                 if now - last >= ALERT_COOLDOWN_SECONDS:
                     sent = notifier.batch_alert(all_detections)
@@ -711,7 +1060,7 @@ def run(
 
 
 def main() -> None:
-    """CLI entry point — reads config from environment variables."""
+    """CLI entry point - reads config from environment variables."""
     logging.basicConfig(
         level=os.environ.get("LOG_LEVEL", "INFO").upper(),
         format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
@@ -743,6 +1092,10 @@ def main() -> None:
         virustotal_key=_env("VIRUSTOTAL_API_KEY"),
         otx_key=_env("OTX_API_KEY"),
         threat_intel_api_ttl=int(_env("CLAWDBOT_THREAT_INTEL_TTL", "86400")),
+        protected_ips=_env("CLAWDBOT_PROTECTED_IPS", "100.111.77.70"),
+        protected_ips_file=_env("CLAWDBOT_PROTECTED_IPS_FILE"),
+        firewall_queue=_env("CLAWDBOT_FIREWALL_QUEUE"),
+        llm_double_check_delay=int(_env("CLAWDBOT_LLM_DOUBLE_CHECK_DELAY_SECONDS", str(LLM_DOUBLE_CHECK_DELAY_SECONDS))),
     )
 
 

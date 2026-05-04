@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ detail.ip }} | IP Detail</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+  <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}?v=20260422-1">
+</head>
+<body>
+  <div class="shell">
+    {% include "_sidebar.html" %}
+    <main>
+      <header class="hero">
+        <div>
+          <p class="eyebrow">IP investigation</p>
+          <h1>{{ detail.ip }}</h1>
+          <p class="subhead">{% if detail.is_protected %}Protected asset profile.{% else %}Reputation and related incident history.{% endif %}</p>
+        </div>
+      </header>
+
+      <section class="kpi-grid intel-kpis">
+        <article class="kpi"><span>Originator Events</span><strong>{{ detail.role_counts.originator or 0 }}</strong><small>IP acted as attacker/source</small></article>
+        <article class="kpi"><span>Target Events</span><strong>{{ detail.role_counts.target or 0 }}</strong><small>IP acted as protected/victim side</small></article>
+        <article class="kpi"><span>Reputation</span><strong class="kpi-time">{{ detail.intel.badge if detail.intel else "Protected / none" }}</strong><small>From threat cache</small></article>
+        <article class="kpi"><span>Related Incidents</span><strong>{{ detail.incidents|length }}</strong><small>Grouped dashboard incidents</small></article>
+      </section>
+
+      <section class="grid two">
+        <article class="panel">
+          <div class="panel-head"><div><span class="eyebrow">Labels</span><h2>Observed Labels</h2></div></div>
+          {% if detail.labels %}
+            <div class="rank-list">{% for item in detail.labels %}<div class="rank-row"><span class="rank-name">{{ item.name }}</span><strong>{{ item.value }}</strong></div>{% endfor %}</div>
+          {% else %}<p class="muted">No incident labels recorded for this IP.</p>{% endif %}
+        </article>
+        <article class="panel">
+          <div class="panel-head"><div><span class="eyebrow">Cache</span><h2>Reputation Record</h2></div></div>
+          {% if detail.intel %}
+            <p><span class="intel-badge {{ detail.intel.badge_class }}">{{ detail.intel.badge }}</span></p>
+            <p class="muted">Hits: {{ detail.intel.hit_count }} - Severity: {{ detail.intel.cumulative_severity }} - Last seen: {{ detail.intel.last_seen }}</p>
+            <div class="chip-row">{% for label in detail.intel.labels %}<span class="chip">{{ label }}</span>{% endfor %}</div>
+          {% else %}
+            <p class="muted">No attacker reputation record is stored for this IP.</p>
+          {% endif %}
+        </article>
+      </section>
+
+      <section class="panel table-panel">
+        <div class="panel-head"><div><span class="eyebrow">Incident history</span><h2>Related Incidents</h2></div></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Time</th><th>Label</th><th>Severity</th><th>Source</th><th>Destination</th><th>Port</th><th>Summary</th></tr></thead>
+            <tbody>
+              {% for row in detail.incidents %}
+                <tr><td>{{ row.time }}</td><td>{{ row.label }}</td><td><span class="severity {{ row.severity }}">{{ row.severity }}</span></td><td>{{ row.src }}</td><td>{{ row.dst }}</td><td>{{ row.port }}</td><td>{{ row.summary }}</td></tr>
+              {% else %}
+                <tr><td colspan="7">No related incidents found.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

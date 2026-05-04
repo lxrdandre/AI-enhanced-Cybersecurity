@@ -22,6 +22,7 @@ os.environ.setdefault("XDG_CACHE_HOME", "/data/.cache")
 
 
 def main() -> None:
+    """Run the command-line entry point."""
     parser = argparse.ArgumentParser(description="Export LoRA adapter to Ollama")
     parser.add_argument("--adapter", required=True, help="LoRA adapter directory")
     parser.add_argument(
@@ -44,11 +45,11 @@ def main() -> None:
         print(f"Adapter not found: {adapter_path}", file=sys.stderr)
         sys.exit(1)
 
-    # ── Lazy imports ─────────────────────────────────────────────────────
+    # -- Lazy imports -----------------------------------------------------
     print("Loading libraries...")
     from unsloth import FastLanguageModel
 
-    # ── Load base model + LoRA adapter ───────────────────────────────────
+    # -- Load base model + LoRA adapter -----------------------------------
     print(f"Loading adapter: {args.adapter}")
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=str(adapter_path),
@@ -57,7 +58,7 @@ def main() -> None:
         load_in_4bit=True,
     )
 
-    # ── Merge and save as GGUF ───────────────────────────────────────────
+    # -- Merge and save as GGUF -------------------------------------------
     output_dir = Path(args.output)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -75,7 +76,7 @@ def main() -> None:
     gguf_path = gguf_files[0]
     print(f"GGUF file: {gguf_path}  ({gguf_path.stat().st_size / 1e9:.1f} GB)")
 
-    # ── Create Ollama Modelfile ──────────────────────────────────────────
+    # -- Create Ollama Modelfile ------------------------------------------
     modelfile_path = output_dir / "Modelfile"
     modelfile_content = (
         f'FROM ./{gguf_path.name}\n'
@@ -89,7 +90,7 @@ def main() -> None:
     modelfile_path.write_text(modelfile_content)
     print(f"Modelfile: {modelfile_path}")
 
-    # ── Register with Ollama ─────────────────────────────────────────────
+    # -- Register with Ollama ---------------------------------------------
     print(f"\nRegistering with Ollama as '{args.model_name}'...")
     result = subprocess.run(
         ["ollama", "create", args.model_name, "-f", str(modelfile_path)],

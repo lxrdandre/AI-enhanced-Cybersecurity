@@ -1,0 +1,22 @@
+=== new_dataset Validation ===
+CSV: /data/ton-iot-project/fresh_start/data/custom/tpot_custom.csv
+Model: /data/ton-iot-project/fresh_start/artifacts/resnet_edge_iiotset_random_holdout/resnet_model.keras
+Pipeline: /data/ton-iot-project/fresh_start/artifacts/resnet_edge_iiotset_random_holdout/preprocessing_pipeline.pkl
+Rows: 55248
+Labels: {'scanning': 10000, 'backdoor': 5248, 'injection': 10000, 'password': 10000, 'normal': 10000, 'dos_ddos': 10000}
+Label diagnostics: {'label_column': 'type', 'rows_before_label_filter': 55248, 'rows_after_label_filter': 55248, 'dropped_unsupported_labels': 0, 'label_counts': {'scanning': 10000, 'backdoor': 5248, 'injection': 10000, 'password': 10000, 'normal': 10000, 'dos_ddos': 10000}}
+Final features present: 40/40
+Final features missing: []
+
+              precision    recall  f1-score   support
+
+    backdoor     0.0000    0.0000    0.0000      5248
+    dos_ddos     0.0000    0.0000    0.0000     10000
+   injection     0.0000    0.0000    0.0000     10000
+      normal     0.1110    0.5007    0.1817     10000
+    password     0.0000    0.0000    0.0000     10000
+    scanning     0.0091    0.0092    0.0091     10000
+
+    accuracy                         0.0923     55248
+   macro avg     0.0200    0.0850    0.0318     55248
+weighted avg     0.0217    0.0923    0.0345     55248

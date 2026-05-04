@@ -6,9 +6,9 @@ import numpy as np
 import pytest
 
 
-# ────────────────────────────────────────────────────────────
+# ------------------------------------------------------------
 # Reusable sample records (valid network-flow feature dicts)
-# ────────────────────────────────────────────────────────────
+# ------------------------------------------------------------
 
 SAMPLE_NORMAL_RECORD = {
     "duration": 12,
@@ -35,11 +35,13 @@ SAMPLE_ATTACK_RECORDS = [
 
 @pytest.fixture()
 def normal_record():
+    """Provide a representative benign flow record fixture."""
     return dict(SAMPLE_NORMAL_RECORD)
 
 
 @pytest.fixture()
 def attack_records():
+    """Provide representative attack flow records fixture."""
     return [dict(r) for r in SAMPLE_ATTACK_RECORDS]
 
 

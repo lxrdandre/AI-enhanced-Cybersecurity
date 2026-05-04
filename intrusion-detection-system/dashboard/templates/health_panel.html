@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Health Panel | Threat Intelligence</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+  <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}?v=20260422-1">
+</head>
+<body>
+  <div class="shell">
+    {% include "_sidebar.html" %}
+    <main>
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Operations</p>
+          <h1>Health Panel</h1>
+          <p class="subhead">Live system status for services, bots, storage, queues, and recent runtime errors.</p>
+        </div>
+      </header>
+
+      <section class="health-banner {{ health.overall.status }}">
+        <div>
+          <span class="health-pill {{ health.overall.status }}">{{ health.overall.status }}</span>
+          <h2>{{ health.overall.headline }}</h2>
+          <p>{{ health.overall.detail }}</p>
+          <small>Checked at {{ health.checked_at }}. Error window: {{ health.window_seconds }} seconds.</small>
+        </div>
+        <div class="health-counts">
+          <div><strong>{{ health.overall.counts.ok }}</strong><span>Healthy</span></div>
+          <div><strong>{{ health.overall.counts.warning }}</strong><span>Warnings</span></div>
+          <div><strong>{{ health.overall.counts.critical }}</strong><span>Critical</span></div>
+        </div>
+      </section>
+
+      {% for group in health.groups %}
+      <section class="panel health-section">
+        <div class="panel-head">
+          <div><span class="eyebrow">Health checks</span><h2>{{ group.name }}</h2></div>
+        </div>
+        <div class="health-check-grid">
+          {% for item in group.checks %}
+          <article class="health-check {{ item.status }}">
+            <div class="health-check-top">
+              <span class="health-dot {{ item.status }}"></span>
+              <span class="health-pill {{ item.status }}">{{ item.status }}</span>
+            </div>
+            <h3>{{ item.name }}</h3>
+            <strong>{{ item.summary }}</strong>
+            {% if item.detail %}<p>{{ item.detail }}</p>{% endif %}
+            {% if item.value %}<small>{{ item.value }}</small>{% endif %}
+          </article>
+          {% endfor %}
+        </div>
+      </section>
+      {% endfor %}
+
+      {% if health.journal_lines or health.local_log_lines %}
+      <section class="panel table-panel">
+        <div class="panel-head"><div><span class="eyebrow">Errors</span><h2>Recent Error Lines</h2></div></div>
+        <div class="health-log-list">
+          {% for line in health.journal_lines %}<code>{{ line }}</code>{% endfor %}
+          {% for line in health.local_log_lines %}<code>{{ line }}</code>{% endfor %}
+        </div>
+      </section>
+      {% endif %}
+    </main>
+  </div>
+</body>
+</html>

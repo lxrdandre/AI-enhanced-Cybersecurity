@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MITRE Matrix | Threat Intelligence</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+  <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}?v=20260422-1">
+</head>
+<body>
+  <div class="shell">
+    {% include "_sidebar.html" %}
+    <main>
+      <header class="hero"><div><p class="eyebrow">ATT&CK coverage</p><h1>MITRE Radar</h1><p class="subhead">Observed incident usage against cached ATT&CK technique coverage.</p></div></header>
+      <section class="kpi-grid intel-kpis">
+        <article class="kpi"><span>Mapped Techniques</span><strong>{{ mitre.total_techniques }}</strong><small>Unique technique cells</small></article>
+        <article class="kpi"><span>Total Mappings</span><strong>{{ mitre.total_mappings }}</strong><small>Primary incident tactic hits</small></article>
+        <article class="kpi"><span>Catalog Techniques</span><strong>{{ mitre.catalog_techniques }}</strong><small>Cached ATT&CK references</small></article>
+      </section>
+      <section class="panel mitre-radar-panel">
+        <div class="panel-head">
+          <div><span class="eyebrow">Tactic coverage</span><h2>MITRE Matrix</h2></div>
+          <div class="radar-legend">
+            <span><i class="legend-dot catalog"></i>Catalog coverage</span>
+            <span><i class="legend-dot observed"></i>Observed usage</span>
+          </div>
+        </div>
+        <div class="radar-layout">
+          <div class="radar-chart" aria-label="MITRE tactic radar chart">
+            <svg viewBox="0 0 {{ mitre.radar.size }} {{ mitre.radar.size }}" role="img" aria-labelledby="mitreRadarTitle mitreRadarDesc">
+              <title id="mitreRadarTitle">MITRE tactic radar</title>
+              <desc id="mitreRadarDesc">Catalog technique coverage and observed incident usage by ATT&CK tactic.</desc>
+              {% for ring in mitre.radar.rings %}
+                <polygon class="radar-ring" points="{{ ring.points }}"></polygon>
+                <text class="radar-scale" x="{{ ring.x }}" y="{{ ring.y }}">{{ ring.label }}</text>
+              {% endfor %}
+              {% for axis in mitre.radar.axes %}
+                <line class="radar-axis" x1="{{ mitre.radar.center }}" y1="{{ mitre.radar.center }}" x2="{{ axis.x }}" y2="{{ axis.y }}"></line>
+              {% endfor %}
+              <polygon class="radar-area catalog" points="{{ mitre.radar.catalog_points }}"></polygon>
+              <polyline class="radar-line catalog" points="{{ mitre.radar.catalog_points }} {{ mitre.radar.catalog_points.split(' ')[0] }}"></polyline>
+              <polygon class="radar-area observed" points="{{ mitre.radar.observed_points }}"></polygon>
+              <polyline class="radar-line observed" points="{{ mitre.radar.observed_points }} {{ mitre.radar.observed_points.split(' ')[0] }}"></polyline>
+              {% for marker in mitre.radar.catalog_markers %}
+                <circle class="radar-marker catalog" cx="{{ marker.x }}" cy="{{ marker.y }}" r="4"></circle>
+              {% endfor %}
+              {% for marker in mitre.radar.observed_markers %}
+                <rect class="radar-marker observed" x="{{ marker.x - 4 }}" y="{{ marker.y - 4 }}" width="8" height="8" rx="2"></rect>
+              {% endfor %}
+              {% for axis in mitre.radar.axes %}
+                <text class="radar-label" x="{{ axis.label_x }}" y="{{ axis.label_y }}" text-anchor="{{ axis.anchor }}">
+                  {% for line in axis.label_lines %}
+                    <tspan x="{{ axis.label_x }}" dy="{% if loop.first %}{{ axis.first_dy }}{% else %}15{% endif %}">{{ line }}</tspan>
+                  {% endfor %}
+                </text>
+              {% endfor %}
+            </svg>
+          </div>
+          <aside class="radar-summary">
+            <div><span>Catalog maximum</span><strong>{{ mitre.radar.catalog_max }}</strong><small>techniques in the strongest tactic</small></div>
+            <div><span>Observed maximum</span><strong>{{ mitre.radar.observed_max }}</strong><small>incident hits in the strongest tactic</small></div>
+            <div><span>Observed total</span><strong>{{ mitre.radar.observed_total }}</strong><small>primary tactic mappings</small></div>
+          </aside>
+        </div>
+      </section>
+      <section class="mitre-grid">
+        {% for column in mitre.matrix %}
+          <article class="panel mitre-column">
+            <div class="panel-head"><div><span class="eyebrow">{{ column.count }} hit(s)</span><h2>{{ column.tactic }}</h2></div></div>
+            {% for tech in column.techniques %}
+              <div class="mitre-cell {{ tech.severity }}"><strong>{{ tech.id }}</strong><span>{{ tech.name }}</span><small>{{ tech.count }} - {{ tech.last_seen }}</small></div>
+            {% endfor %}
+          </article>
+        {% else %}
+          <section class="panel intel-empty"><span class="eyebrow">No mappings</span><h2>No MITRE techniques have been recorded yet.</h2></section>
+        {% endfor %}
+      </section>
+    </main>
+  </div>
+</body>
+</html>

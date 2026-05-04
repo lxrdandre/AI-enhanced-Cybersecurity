@@ -1,6 +1,6 @@
 Video of current functionalities - https://youtu.be/PqMEY2Pppp0
 
-# TON IoT IPS — Deployable Inference Service + ClawdBot SOC Agent
+# TON IoT IPS - Deployable Inference Service + ClawdBot SOC Agent
 
 Network intrusion detection system built on SE-DWNet/ResNet with a FastAPI inference API, tiered local LLM triage (Ollama), autonomous SOC response agent (ClawdBot via OpenClaw), and Telegram alerting.
 
@@ -12,13 +12,13 @@ Network intrusion detection system built on SE-DWNet/ResNet with a FastAPI infer
 
 1. [Architecture](#architecture)
 2. [Prerequisites](#prerequisites)
-3. [Step 1 — Python environment & IDS API](#step-1--python-environment--ids-api)
-4. [Step 2 — Ollama (local LLM)](#step-2--ollama-local-llm)
-5. [Step 3 — OpenClaw + ClawdBot](#step-3--openclaw--clawdbot)
-6. [Step 4 — Telegram bot](#step-4--telegram-bot)
-7. [Step 5 — ClawdBot capture agent](#step-5--clawdbot-capture-agent)
-8. [Step 6 — Start everything](#step-6--start-everything)
-9. [Step 7 — Live Dashboard](#step-7--live-dashboard)
+3. [Step 1 - Python environment & IDS API](#step-1--python-environment--ids-api)
+4. [Step 2 - Ollama (local LLM)](#step-2--ollama-local-llm)
+5. [Step 3 - OpenClaw + ClawdBot](#step-3--openclaw--clawdbot)
+6. [Step 4 - Telegram bot](#step-4--telegram-bot)
+7. [Step 5 - ClawdBot capture agent](#step-5--clawdbot-capture-agent)
+8. [Step 6 - Start everything](#step-6--start-everything)
+9. [Step 7 - Live Dashboard](#step-7--live-dashboard)
 10. [Systemd deployment](#systemd-deployment)
 11. [Restarting services](#restarting-services)
 12. [Environment variables reference](#environment-variables-reference)
@@ -34,30 +34,31 @@ Network intrusion detection system built on SE-DWNet/ResNet with a FastAPI infer
 
 ```
  LAN traffic (scapy live capture)
-          │
-          ▼
-   ┌──────────────┐
-   │  ClawdBot     │  ← capture agent (python -m clawdbot)
-   │  Agent        │     sniffs packets → aggregates flows
-   └──────┬───────┘
-          │ POST /analyze (batch of flow records)
-          ▼
-   ┌──────────────┐
-   │  IDS API      │  ← SE-DWNet / ResNet classifier
-   │  /analyze     │     (this repo, port 8000)
-   └──────┬───────┘
-          │ predictions + triage
-          ▼
-   ┌──────────────┐
-   │  Triage       │  ← MITRE ATT&CK labeling via Ollama
-   │  (Ollama)     │
-   └──┬───────┬───┘
-      │       │
-      ▼       ▼
+          |
+          v
+   +--------------+
+   |  ClawdBot     |  <- capture agent (python -m clawdbot)
+   |  Agent        |     sniffs packets -> aggregates flows
+   +------+-------+
+          | POST /analyze (batch of flow records)
+          v
+   +--------------+
+   |  IDS API      |  <- SE-DWNet / ResNet classifier
+   |  /analyze     |     (this repo, port 8000)
+   +------+-------+
+          | predictions + triage
+          v
+   +--------------+
+   |  Triage       |  <- MITRE ATT&CK labeling via Ollama
+   |  (Ollama)     |
+   +--+-------+---+
+      |       |
+      v       v
   Tier-1 LLM  Telegram Bot
   + Tier-2     SOC alerts
-   ├─ Tier-1: mistral-small:24b   (fast, every alert)
-   └─ Tier-2: llama3.1:70b        (escalation only)
+
+  Tier-1: mistral-small:24b   (fast, every alert)
+  Tier-2: llama3.1:70b        (escalation only)
 ```
 
 ---
@@ -74,7 +75,7 @@ Network intrusion detection system built on SE-DWNet/ResNet with a FastAPI infer
 
 ---
 
-## Step 1 — Python environment & IDS API
+## Step 1 - Python environment & IDS API
 
 ```bash
 # Clone and enter the repo
@@ -100,7 +101,7 @@ curl http://127.0.0.1:8000/health
 
 ---
 
-## Step 2 — Ollama (local LLM)
+## Step 2 - Ollama (local LLM)
 
 ### Install Ollama
 
@@ -154,7 +155,7 @@ export OLLAMA_ESCALATION_CONFIDENCE=0.75
 
 ---
 
-## Step 3 — OpenClaw + ClawdBot
+## Step 3 - OpenClaw + ClawdBot
 
 ### Install OpenClaw
 
@@ -162,7 +163,7 @@ Follow the [OpenClaw installation guide](https://openclaw.dev) for your system.
 
 ### Configure OpenClaw to use local Ollama
 
-The OpenClaw CLI validates provider config as a whole block — individual field sets will fail validation. Use this Python script to patch the config correctly:
+The OpenClaw CLI validates provider config as a whole block - individual field sets will fail validation. Use this Python script to patch the config correctly:
 
 ```bash
 cat << 'PATCH_EOF' > patch_claw.py
@@ -228,13 +229,13 @@ openclaw gateway
 
 ---
 
-## Step 4 — Telegram bot
+## Step 4 - Telegram bot
 
 ### Create the bot
 
-1. Open Telegram → message **@BotFather** → `/newbot`
+1. Open Telegram -> message **@BotFather** -> `/newbot`
 2. Save the **bot token** (e.g. `7123456789:AAH...`)
-3. Create a private group/channel for SOC alerts → add the bot as admin
+3. Create a private group/channel for SOC alerts -> add the bot as admin
 4. Get the **chat ID**:
 
 ```bash
@@ -252,7 +253,7 @@ export TELEGRAM_CHAT_ID="-100xxxxxxxxxx"
 
 ---
 
-## Step 5 — ClawdBot capture agent
+## Step 5 - ClawdBot capture agent
 
 The capture agent sniffs live LAN traffic with scapy, aggregates packets into flow records, POSTs them to the IDS API `/analyze` endpoint, and sends Telegram alerts for detected attacks.
 
@@ -286,7 +287,7 @@ sudo -E python -m clawdbot
 
 ---
 
-## Step 6 — Start everything
+## Step 6 - Start everything
 
 Start all services in this order:
 
@@ -317,7 +318,7 @@ curl http://127.0.0.1:11434/api/tags       # Ollama
 
 ---
 
-## Step 7 — Live Dashboard
+## Step 7 - Live Dashboard
 
 The Flask dashboard reads ClawdBot event logs and IDS audit logs, then refreshes SOC metrics in the browser every few seconds. It loads Chart.js and Google Fonts from public CDNs for the live charts and typography.
 
@@ -370,8 +371,8 @@ This installs three services:
 Edit the unit files in `deploy/` to match your paths:
 
 ```bash
-# deploy/ids-api.service — adjust WorkingDirectory and venv path
-# deploy/clawdbot-agent.service — adjust CLAWDBOT_INTERFACE, paths
+# deploy/ids-api.service - adjust WorkingDirectory and venv path
+# deploy/clawdbot-agent.service - adjust CLAWDBOT_INTERFACE, paths
 
 # For Telegram credentials, create a .env file:
 cat > /home/adrian/fresh_start/.env << 'EOF'
@@ -498,6 +499,9 @@ openclaw gateway &
 | `CLAWDBOT_SEVERITY_THRESHOLD` | `medium` | Min severity for Telegram alerts |
 | `CLAWDBOT_LOG_DIR` | `/data/ton-iot-project/fresh_start/logs` | Attack + action event logs |
 | `CLAWDBOT_IGNORE_PORTS` | `22,64295,5000,8000` | Management ports ignored between whitelisted peers before IDS analysis |
+| `CLAWDBOT_PROTECTED_IPS` | `100.111.77.70` | Comma-separated protected/server IPs used to normalize attacker -> target roles and exclude server IPs from reputation history |
+| `CLAWDBOT_PROTECTED_IPS_FILE` | `$ROOT/data/protected_ips.json` | Dashboard-managed protected IP list reloaded by the agent |
+| `CLAWDBOT_FIREWALL_QUEUE` | `$ROOT/data/firewall_requests.json` | Dashboard firewall request queue consumed by the root agent |
 | `LOG_LEVEL` | `INFO` | Agent log level |
 
 ### Dashboard
@@ -509,8 +513,12 @@ openclaw gateway &
 | `TON_IOT_DASHBOARD_API_URL` | `http://127.0.0.1:8000` | IDS API base URL for status/metadata |
 | `TON_IOT_DASHBOARD_LOG_DIR` | `$CLAWDBOT_LOG_DIR` or `$ROOT/logs` | ClawdBot event log directory |
 | `TON_IOT_DASHBOARD_AUDIT_LOG` | `$ROOT/artifacts/audit/analyze_events.jsonl` | IDS audit JSONL path |
+| `TON_IOT_DASHBOARD_THREAT_DB` | `$ROOT/data/threat_cache.db` | SQLite threat-intelligence cache displayed on the IP Intel page |
 | `TON_IOT_DASHBOARD_REFRESH_SECONDS` | `5` | Browser polling interval |
 | `TON_IOT_DASHBOARD_IGNORE_PORTS` | `22,64295,5000,8000` | Ports hidden from dashboard metrics; set to `none` to disable |
+| `TON_IOT_DASHBOARD_PROTECTED_IPS` | `$CLAWDBOT_PROTECTED_IPS` or `100.111.77.70` | Comma-separated protected/server IPs used for Top Originators/Top Targets role normalization and IP Intel filtering |
+| `TON_IOT_DASHBOARD_PROTECTED_IPS_FILE` | `$ROOT/data/protected_ips.json` | Editable protected IP list used by the dashboard and agent |
+| `TON_IOT_DASHBOARD_FIREWALL_QUEUE` | `$ROOT/data/firewall_requests.json` | Dashboard queue for manual block/unblock requests |
 
 ---
 
@@ -577,44 +585,57 @@ The triage service uses a two-tier architecture:
 - Triage severity is `review` or `critical`
 
 **Fallback chain:**
-1. Tier-1 response → use it (95% of cases)
-2. Tier-1 + escalation → Tier-2 response replaces Tier-1
-3. Tier-2 fails → keep Tier-1 result
-4. Tier-1 fails → heuristic MITRE mapping (no LLM)
+1. Tier-1 response -> use it (95% of cases)
+2. Tier-1 + escalation -> Tier-2 response replaces Tier-1
+3. Tier-2 fails -> keep Tier-1 result
+4. Tier-1 fails -> heuristic MITRE mapping (no LLM)
 
 ---
 
 ## Telegram alert format
 
 ```
-🔴 HIGH SEVERITY — ddos_dos
+[HIGH] HIGH SEVERITY - ddos_dos
 
-🔎 MITRE ATT&CK
-  Tactic: Impact
-  Technique: T1498 — Network Denial of Service
+Detection context
+  Classifier label: ddos_dos
+  Confidence: 0.923
+  Model route: live_cic (0.881)
+  Confidence note: Model confidence is high.
+  Triage source: ollama:mistral-small:24b
 
-📊 Confidence: 0.923
-📝 DDoS traffic pattern detected from 192.168.1.105 → 10.0.0.1
+Flow
+  TCP 192.168.1.105:51544 -> 10.0.0.1:443
 
-🤖 LLM Analysis:
-  Volumetric flood targeting port 443. Recommend blocking
-  source at edge firewall and engaging upstream ISP scrubbing.
+MITRE ATT&CK mapping
+  Tactics: Impact
+  Technique: T1498 - Network Denial of Service (confidence high; flood behavior)
 
-⏭ Next actions:
+Analyst summary
+  DDoS traffic pattern detected against the HTTPS service.
+
+IP reputation
+  Badge: Suspicious (3 hit(s))
+  Signals: local severity 2; AbuseIPDB 42
+
+Firewall action
+  Blocked 192.168.1.105 for 60min
+
+Next actions:
   1. Block source IP at perimeter firewall
   2. Check for amplification reflectors in network
   3. Escalate to Tier-2 if sustained > 5 min
 ```
 
-### Severity → alert mapping
+### Severity -> alert mapping
 
 | Severity | Alert | Action |
 |----------|-------|--------|
-| `low` | No alert (logged only) | — |
-| `medium` | ⚠️ Warning message | SOC review |
-| `high` | 🔴 Alert message | Immediate triage |
-| `critical` | 🚨 Alert + @mention on-call | Incident response |
-| `review` | 🟡 Review message | Manual classification needed |
+| `low` | No alert (logged only) | - |
+| `medium` | [WARN] Warning message | SOC review |
+| `high` | [HIGH] Alert message | Immediate triage |
+| `critical` | [CRITICAL] Alert + @mention on-call | Incident response |
+| `review` | [REVIEW] Review message | Manual classification needed |
 
 ---
 
@@ -642,7 +663,7 @@ python helper/smoke_test_api.py --base-url http://SERVER_IP:8000
 |--------|--------|
 | **Model** | `mistral-small:24b` (instruction-tuned) |
 | **VRAM (Q8)** | ~26 GB |
-| **Speed on H200** | ~80–120 tok/s |
+| **Speed on H200** | ~80-120 tok/s |
 | **Context window** | 128K tokens |
 | **Why** | Best speed/accuracy balance for structured MITRE labeling |
 

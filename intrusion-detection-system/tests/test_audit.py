@@ -12,27 +12,35 @@ from app.audit import AuditLogger, _records_hash
 
 
 class TestRecordsHash:
+    """Group tests covering records hash behavior."""
     def test_deterministic(self):
+        """Verify that deterministic."""
         records = [{"a": 1}, {"b": 2}]
         assert _records_hash(records) == _records_hash(records)
 
     def test_different_records_different_hash(self):
+        """Verify that different records different hash."""
         assert _records_hash([{"a": 1}]) != _records_hash([{"a": 2}])
 
     def test_order_matters(self):
+        """Verify that order matters."""
         assert _records_hash([{"a": 1}, {"b": 2}]) != _records_hash([{"b": 2}, {"a": 1}])
 
 
 class TestAuditLogger:
+    """Group tests covering audit logger behavior."""
     @pytest.fixture()
     def tmp_log(self, tmp_path):
+        """Provide a temporary audit log path."""
         return str(tmp_path / "audit" / "test_events.jsonl")
 
     def test_creates_log_directory(self, tmp_log):
+        """Verify that creates log directory."""
         AuditLogger(log_path=tmp_log)
         assert os.path.isdir(os.path.dirname(tmp_log))
 
     def test_log_analyze_writes_line(self, tmp_log):
+        """Verify that log analyze writes line."""
         logger = AuditLogger(log_path=tmp_log)
         audit_id = logger.log_analyze(
             model_name="test_model",
@@ -55,6 +63,7 @@ class TestAuditLogger:
         assert row["llm_enabled"] is False
 
     def test_multiple_logs_append(self, tmp_log):
+        """Verify that multiple logs append."""
         logger = AuditLogger(log_path=tmp_log)
         for _ in range(5):
             logger.log_analyze(

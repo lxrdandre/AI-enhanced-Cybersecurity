@@ -17,7 +17,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-# ── Constants — must match TriageService exactly ─────────────────────────
+# -- Constants - must match TriageService exactly -------------------------
 
 SYSTEM_PROMPT = (
     "You are a SOC analyst assistant. Respond ONLY with valid JSON "
@@ -44,7 +44,7 @@ OUTPUT_SCHEMA = {
 ALL_CLASSES = ["backdoor", "ddos_dos", "injection", "normal", "password", "scanning", "xss"]
 TRIAGE_CLASSES = ["backdoor", "ddos_dos", "injection", "password", "scanning", "xss"]
 
-# ── MITRE tactics per class ──────────────────────────────────────────────
+# -- MITRE tactics per class ----------------------------------------------
 
 TACTICS: dict[str, list[str]] = {
     "backdoor": ["Persistence", "Command and Control"],
@@ -55,7 +55,7 @@ TACTICS: dict[str, list[str]] = {
     "xss": ["Initial Access", "Execution"],
 }
 
-# ── MITRE techniques per class (pool to sample from) ────────────────────
+# -- MITRE techniques per class (pool to sample from) --------------------
 
 TECHNIQUES: dict[str, list[dict]] = {
     "backdoor": [
@@ -124,7 +124,7 @@ TECHNIQUES: dict[str, list[dict]] = {
     ],
 }
 
-# ── Flow scenario templates ─────────────────────────────────────────────
+# -- Flow scenario templates ---------------------------------------------
 # Each scenario defines parameter ranges for realistic flow generation.
 # Tuples are (min, max) ranges; lists are choices.
 
@@ -257,7 +257,7 @@ SCENARIOS: dict[str, list[dict]] = {
     ],
 }
 
-# ── Next-action pools per class ──────────────────────────────────────────
+# -- Next-action pools per class ------------------------------------------
 
 NEXT_ACTIONS: dict[str, list[str]] = {
     "backdoor": [
@@ -325,7 +325,7 @@ DNS_DOMAINS = [
     "ns1.evil-dns.com", "tracker.botnet.ru", "data.exfil-server.io",
 ]
 
-# ── Generation helpers ───────────────────────────────────────────────────
+# -- Generation helpers ---------------------------------------------------
 
 
 def _ri(rng: random.Random, r: tuple) -> int:
@@ -363,7 +363,7 @@ def _generate_flow(scenario: dict, rng: random.Random) -> dict:
     src_pkts = _ri(rng, scenario["src_pkts"])
     dst_pkts = _ri(rng, scenario["dst_pkts"])
 
-    # HTTP fields — populate when relevant
+    # HTTP fields - populate when relevant
     is_http = service in ("http",) or "http_method" in scenario
     http_method = scenario.get("http_method", rng.choice(["GET", "POST"])) if is_http else "-"
     http_ua = rng.choice(USER_AGENTS) if is_http else "-"
@@ -372,7 +372,7 @@ def _generate_flow(scenario: dict, rng: random.Random) -> dict:
     http_status = rng.choice([200, 200, 200, 301, 403, 500]) if is_http else 0
     http_depth = rng.randint(1, 5) if is_http else 0
 
-    # DNS fields — populate for port 53
+    # DNS fields - populate for port 53
     dns_query = "-"
     dns_qclass = "-"
     dns_qtype = "-"
@@ -461,6 +461,7 @@ def _severity_for(cls: str, confidence: float, rng: random.Random) -> str:
 
 
 def _confidence_note(confidence: float) -> str:
+    """Return a short confidence-quality explanation."""
     if confidence >= 0.95:
         return f"Very high model confidence ({confidence:.1%}). Detection is highly reliable."
     if confidence >= 0.85:
@@ -521,23 +522,25 @@ def _generate_triage(
 
 
 def _build_prompt(prediction: dict, record: dict) -> str:
-    """Build user prompt — mirrors ``TriageService._build_prompt()`` exactly."""
+    """Build user prompt - mirrors ``TriageService._build_prompt()`` exactly."""
     prompt = {
         "task": "SOC triage and MITRE enrichment",
         "constraints": [
             "Do not relabel classifier output.",
             "Return JSON only.",
             "If uncertain, set severity to review.",
+            "Include MITRE tactics, techniques, confidence, and reason fields that explain the mapping.",
+            "Make next_actions concrete enough for a first responder to execute.",
         ],
         "output_schema": OUTPUT_SCHEMA,
         "classifier_prediction": prediction,
         "record": record,
         "context": {},
     }
-    return json.dumps(prompt, ensure_ascii=False)
+    return json.dumps(prompt, ensure_ascii=True)
 
 
-# ── Dataset assembly ─────────────────────────────────────────────────────
+# -- Dataset assembly -----------------------------------------------------
 
 
 def generate_dataset(
@@ -569,6 +572,7 @@ def generate_dataset(
 
 
 def _write_jsonl(path: str, data: list[dict]) -> None:
+    """Write jsonl."""
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         for item in data:
@@ -576,6 +580,7 @@ def _write_jsonl(path: str, data: list[dict]) -> None:
 
 
 def main() -> None:
+    """Run the command-line entry point."""
     parser = argparse.ArgumentParser(description="Generate synthetic triage training data")
     parser.add_argument("--out", default="data/triage_train.jsonl", help="Training JSONL path")
     parser.add_argument("--test-out", default="data/triage_test.jsonl", help="Test JSONL path")

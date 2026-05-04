@@ -1,0 +1,243 @@
+{
+  "script": "resnet_cic_public.py",
+  "dataset_name": "cic_public_6class",
+  "data_csv": "/data/ton-iot-project/fresh_start/data/cic_public_6class.csv",
+  "artifact_dir": "/data/ton-iot-project/fresh_start/artifacts/resnet_cic_public",
+  "model_path": "/data/ton-iot-project/fresh_start/artifacts/resnet_cic_public/resnet_model.keras",
+  "pipeline_path": "/data/ton-iot-project/fresh_start/artifacts/resnet_cic_public/preprocessing_pipeline.pkl",
+  "classes": [
+    "backdoor",
+    "dos_ddos",
+    "infiltration",
+    "normal",
+    "password",
+    "scanning"
+  ],
+  "selected_features": [
+    "dst_port",
+    "duration",
+    "average_packet_size",
+    "bwd_header_len",
+    "bwd_iat_max",
+    "bwd_iat_mean",
+    "bwd_pkt_len_max",
+    "bwd_pkt_len_mean",
+    "bwd_pkts_s",
+    "bwd_seg_size_avg",
+    "dst_bytes",
+    "dst_pkts",
+    "flow_byts_s",
+    "flow_iat_max",
+    "flow_iat_mean",
+    "flow_iat_std",
+    "flow_pkts_s",
+    "fwd_header_len",
+    "fwd_iat_max",
+    "fwd_iat_mean",
+    "fwd_iat_std",
+    "fwd_iat_tot",
+    "fwd_pkt_len_max",
+    "fwd_pkt_len_mean",
+    "fwd_pkts_s",
+    "fwd_seg_size_avg",
+    "fwd_seg_size_min",
+    "init_bwd_win_byts",
+    "init_fwd_win_byts",
+    "packet_length_mean",
+    "pkt_len_max",
+    "pkt_len_mean",
+    "pkt_len_std",
+    "pkt_len_var",
+    "pkt_size_avg",
+    "src_bytes",
+    "subflow_bwd_byts",
+    "subflow_bwd_pkts",
+    "subflow_fwd_byts",
+    "subflow_fwd_pkts"
+  ],
+  "target_k": 40,
+  "split_per_class_cap": 150000,
+  "spare_validation_per_class": 1000,
+  "batch_size": 1024,
+  "max_epochs": 100,
+  "seed": 42,
+  "learning_rate": 0.0005,
+  "split_mode": "temporal",
+  "split_info": {
+    "mode": "temporal",
+    "class_splits": {
+      "backdoor": {
+        "kind": "temporal",
+        "train": 87681,
+        "val": 28904,
+        "test": 28903
+      },
+      "dos_ddos": {
+        "kind": "random_fallback",
+        "train": 90000,
+        "val": 30000,
+        "test": 30000
+      },
+      "infiltration": {
+        "kind": "temporal",
+        "train": 106390,
+        "val": 16826,
+        "test": 16429
+      },
+      "normal": {
+        "kind": "random_fallback",
+        "train": 90000,
+        "val": 30000,
+        "test": 30000
+      },
+      "password": {
+        "kind": "random_fallback",
+        "train": 61317,
+        "val": 20439,
+        "test": 20439
+      },
+      "scanning": {
+        "kind": "random_fallback",
+        "train": 53891,
+        "val": 17964,
+        "test": 17964
+      }
+    }
+  },
+  "time_col": "ts",
+  "temporal_fallback": "random",
+  "val_size": 0.2,
+  "test_size": 0.2,
+  "dedupe": {
+    "before": 2314736,
+    "after": 1679927,
+    "dropped": 634809
+  },
+  "split_manifest_path": "/data/ton-iot-project/fresh_start/artifacts/resnet_cic_public/split_membership.csv.gz",
+  "split_manifest_counts": {
+    "holdout_spare": 6000,
+    "test": 143735,
+    "train_fit": 489279,
+    "val": 144133
+  },
+  "selection_info": {
+    "class_selection": {
+      "backdoor": {
+        "mode": "temporal_recent",
+        "available": 146488,
+        "split_pool": 145488,
+        "spare_validation": 1000,
+        "discarded_after_cap": 0
+      },
+      "dos_ddos": {
+        "mode": "random",
+        "available": 437592,
+        "split_pool": 150000,
+        "spare_validation": 1000,
+        "discarded_after_cap": 286592
+      },
+      "infiltration": {
+        "mode": "temporal_recent",
+        "available": 140645,
+        "split_pool": 139645,
+        "spare_validation": 1000,
+        "discarded_after_cap": 0
+      },
+      "normal": {
+        "mode": "random",
+        "available": 761188,
+        "split_pool": 150000,
+        "spare_validation": 1000,
+        "discarded_after_cap": 610188
+      },
+      "password": {
+        "mode": "random",
+        "available": 103195,
+        "split_pool": 102195,
+        "spare_validation": 1000,
+        "discarded_after_cap": 0
+      },
+      "scanning": {
+        "mode": "random",
+        "available": 90819,
+        "split_pool": 89819,
+        "spare_validation": 1000,
+        "discarded_after_cap": 0
+      }
+    }
+  },
+  "smote_mode": "auto",
+  "smote_enabled": true,
+  "smote_imbalance_ratio": 1.9741700840585628,
+  "smote_auto_threshold": 1.25,
+  "loss": {
+    "name": "CategoricalFocalCrossentropy",
+    "gamma": 2.0,
+    "alpha_clip": [
+      0.5,
+      5.0
+    ],
+    "alpha_min": 1.0,
+    "alpha_mean": 1.0,
+    "alpha_max": 1.0
+  },
+  "class_counts_after_cleanup": {
+    "backdoor": 288157,
+    "normal": 800000,
+    "dos_ddos": 800000,
+    "password": 394784,
+    "infiltration": 161970,
+    "scanning": 158930
+  },
+  "class_counts_after_selection": {
+    "backdoor": 146488,
+    "dos_ddos": 151000,
+    "infiltration": 140645,
+    "normal": 151000,
+    "password": 103195,
+    "scanning": 90819
+  },
+  "split_pool_counts": {
+    "backdoor": 145488,
+    "dos_ddos": 150000,
+    "infiltration": 139645,
+    "normal": 150000,
+    "password": 102195,
+    "scanning": 89819
+  },
+  "spare_validation_counts": {
+    "backdoor": 1000,
+    "dos_ddos": 1000,
+    "infiltration": 1000,
+    "normal": 1000,
+    "password": 1000,
+    "scanning": 1000
+  },
+  "train_counts": {
+    "backdoor": 87681,
+    "dos_ddos": 90000,
+    "infiltration": 106390,
+    "normal": 90000,
+    "password": 61317,
+    "scanning": 53891
+  },
+  "val_counts": {
+    "backdoor": 28904,
+    "dos_ddos": 30000,
+    "infiltration": 16826,
+    "normal": 30000,
+    "password": 20439,
+    "scanning": 17964
+  },
+  "test_counts": {
+    "backdoor": 28903,
+    "dos_ddos": 30000,
+    "infiltration": 16429,
+    "normal": 30000,
+    "password": 20439,
+    "scanning": 17964
+  },
+  "spare_validation_csv": "/data/ton-iot-project/fresh_start/data/cic_public_6class_spare_validation.csv",
+  "spare_validation_report": "/data/ton-iot-project/fresh_start/data/cic_public_6class_spare_validation_report.json",
+  "secondary_validation_output_dir": "/data/ton-iot-project/fresh_start/artifacts/resnet_cic_public/cic_public_6class_spare_validation"
+}

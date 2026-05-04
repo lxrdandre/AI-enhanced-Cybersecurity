@@ -1,0 +1,18 @@
+=== ResNet Edge-IIoTset Final Holdout Evaluation ===
+CSV: /data/datasets/edge_iiotset/processed/edge_iiotset_6class_cap100k_source.csv
+Model: /data/ton-iot-project/fresh_start/artifacts/resnet_edge_iiotset_random_holdout/resnet_model.keras
+Loss: {'name': 'CategoricalFocalCrossentropy', 'gamma': 2.0, 'alpha_clip': [0.5, 5.0], 'alpha_min': 0.9990734457969666, 'alpha_mean': 1.0000001192092896, 'alpha_max': 1.0046329498291016}
+Holdout: {'enabled': True, 'holdout_size': 0.05, 'stratify': 'source_label', 'pool_rows': 498618, 'holdout_rows': 26244, 'holdout_counts': {'injection': 5001, 'dos_ddos': 5000, 'password': 5000, 'scanning': 5000, 'normal': 5000, 'backdoor': 1243}, 'holdout_source_counts': {'uploading': 1882, 'ddos_icmp': 1250, 'password': 5000, 'port_scanning': 1128, 'normal_flame_sensor': 500, 'normal_water_level': 500, 'vulnerability_scanner': 3822, 'ddos_http': 1250, 'normal_sound_sensor': 500, 'normal_distance': 500, 'xss': 796, 'backdoor': 1243, 'sql_injection': 2323, 'normal_temperature_and_humidity': 500, 'ddos_tcp_syn': 1250, 'normal_modbus': 500, 'normal_heart_rate': 500, 'ddos_udp': 1250, 'normal_phvalue': 500, 'normal_soil_moisture': 500, 'normal_ir_receiver': 500, 'os_fingerprinting': 50}}
+
+              precision    recall  f1-score   support
+
+    backdoor     0.9444    0.9847    0.9642      1243
+    dos_ddos     0.8511    0.9738    0.9083      5000
+   injection     0.9606    0.9704    0.9655      5001
+      normal     1.0000    1.0000    1.0000      5000
+    password     1.0000    1.0000    1.0000      5000
+    scanning     0.9902    0.8268    0.9011      5000
+
+    accuracy                         0.9556     26244
+   macro avg     0.9577    0.9593    0.9565     26244
+weighted avg     0.9596    0.9556    0.9554     26244

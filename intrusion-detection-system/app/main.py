@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import logging
-import os
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 
 from app.audit import AuditLogger
 from app.config import Settings
-from app.model_registry import load_artifacts, load_domain_router, load_model_file
+from app.model_registry import load_artifacts
 from app.schemas import AnalyzeRequest, AnalyzeResponse, MetadataResponse, PredictRequest, PredictResponse
 from app.service import InferenceService
 from app.triage import TriageService, _default_triage_item
@@ -17,6 +16,7 @@ log = logging.getLogger(__name__)
 
 settings = Settings.from_env()
 
+
 try:
     model, pipeline, final_features, calibration = load_artifacts(
         artifact_dir=settings.artifact_dir,
@@ -25,18 +25,12 @@ try:
         features_filename=settings.features_filename,
         calibration_filename=settings.calibration_filename,
     )
-    domain_router = load_domain_router(artifact_dir=settings.artifact_dir)
-    original_model = load_model_file(
-        os.path.join(settings.base_artifact_dir, settings.base_model_filename)
-    )
     inference_service = InferenceService(
         model=model,
-        original_model=original_model,
         pipeline=pipeline,
         final_features=final_features,
         artifact_dir=settings.artifact_dir,
         calibration=calibration,
-        domain_router=domain_router,
         unknown_confidence_threshold=settings.unknown_confidence_threshold,
     )
 except Exception as exc:
@@ -67,6 +61,7 @@ app = FastAPI(title="TON IoT IDS Inference API", version="0.1.0")
 
 @app.get("/")
 def root() -> dict:
+    """Return the API root resource."""
     return {
         "service": "TON IoT IDS Inference API",
         "routes": ["/health", "/metadata", "/predict", "/analyze", "/docs"],
@@ -75,6 +70,7 @@ def root() -> dict:
 
 @app.get("/health")
 def health() -> dict:
+    """Return service health information."""
     return {
         "status": "ok" if inference_service is not None else "error",
         "artifact_dir": settings.artifact_dir,
@@ -84,6 +80,7 @@ def health() -> dict:
 
 @app.get("/metadata", response_model=MetadataResponse)
 def metadata() -> MetadataResponse:
+    """Return service metadata."""
     if inference_service is None:
         raise HTTPException(status_code=500, detail=f"Model not loaded: {startup_error}")
 
@@ -92,6 +89,7 @@ def metadata() -> MetadataResponse:
 
 @app.post("/predict", response_model=PredictResponse)
 def predict(payload: PredictRequest) -> PredictResponse:
+    """Run model inference for submitted records."""
     if inference_service is None:
         raise HTTPException(status_code=500, detail=f"Model not loaded: {startup_error}")
 
@@ -109,6 +107,7 @@ def predict(payload: PredictRequest) -> PredictResponse:
 
 @app.post("/analyze", response_model=AnalyzeResponse)
 def analyze(payload: AnalyzeRequest, background_tasks: BackgroundTasks) -> AnalyzeResponse:
+    """Run inference and triage for submitted records."""
     if inference_service is None:
         raise HTTPException(status_code=500, detail=f"Model not loaded: {startup_error}")
 

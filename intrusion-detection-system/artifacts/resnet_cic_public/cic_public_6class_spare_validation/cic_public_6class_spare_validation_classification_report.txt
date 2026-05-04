@@ -1,0 +1,19 @@
+=== cic_public_6class_spare_validation Validation ===
+CSV: /data/ton-iot-project/fresh_start/data/cic_public_6class_spare_validation.csv
+Model: /data/ton-iot-project/fresh_start/artifacts/resnet_cic_public/resnet_model.keras
+Pipeline: /data/ton-iot-project/fresh_start/artifacts/resnet_cic_public/preprocessing_pipeline.pkl
+Rows: 6000
+Labels: {'backdoor': 1000, 'dos_ddos': 1000, 'infiltration': 1000, 'normal': 1000, 'password': 1000, 'scanning': 1000}
+
+              precision    recall  f1-score   support
+
+    backdoor     0.9938    0.6450    0.7823      1000
+    dos_ddos     0.9881    0.9980    0.9930      1000
+infiltration     0.9921    0.9990    0.9955      1000
+      normal     0.7331    0.9780    0.8380      1000
+    password     1.0000    1.0000    1.0000      1000
+    scanning     0.9990    0.9990    0.9990      1000
+
+    accuracy                         0.9365      6000
+   macro avg     0.9510    0.9365    0.9346      6000
+weighted avg     0.9510    0.9365    0.9346      6000

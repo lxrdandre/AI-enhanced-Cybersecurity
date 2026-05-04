@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Protected Assets | Threat Intelligence</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+  <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}?v=20260422-1">
+</head>
+<body>
+  <div class="shell">
+    {% include "_sidebar.html" %}
+    <main>
+      <header class="hero"><div><p class="eyebrow">Protected scope</p><h1>Protected Assets</h1><p class="subhead">Server/victim IPs are excluded from reputation history and used to normalize originator-to-target roles.</p></div></header>
+      <section class="panel">
+        <div class="panel-head"><div><span class="eyebrow">Configuration</span><h2>Add Protected IP</h2></div></div>
+        <form class="control-form" method="post" action="{{ url_for('protected_assets_add') }}"><input name="ip" placeholder="100.111.77.70" required><button class="detail-button" type="submit">Add Protected IP</button></form>
+        <div class="chip-row protected-list">
+          {% for ip in protected.ips %}
+            <form method="post" action="{{ url_for('protected_assets_remove') }}"><input type="hidden" name="ip" value="{{ ip }}"><span class="chip">{{ ip }} <button type="submit" aria-label="Remove {{ ip }}">x</button></span></form>
+          {% endfor %}
+        </div>
+      </section>
+      <section class="panel table-panel">
+        <div class="panel-head"><div><span class="eyebrow">Victim activity</span><h2>Targeted Asset Summary</h2></div></div>
+        <div class="table-wrap"><table><thead><tr><th>Protected IP</th><th>Targeted Events</th><th>Unique Originators</th><th>Top Ports</th><th>Top Labels</th><th>Last Targeted</th></tr></thead><tbody>
+          {% for asset in protected.assets %}
+            <tr>
+              <td class="ip-cell">{{ asset.ip }}</td>
+              <td>{{ asset.targeted_count }}</td>
+              <td>{{ asset.unique_originators }}</td>
+              <td><div class="asset-chip-list">{% for item in asset.top_ports %}<span class="chip">{{ item.name }} ({{ item.value }})</span>{% else %}<span class="muted">-</span>{% endfor %}</div></td>
+              <td><div class="asset-chip-list">{% for item in asset.labels %}<span class="chip">{{ item.name }} ({{ item.value }})</span>{% else %}<span class="muted">-</span>{% endfor %}</div></td>
+              <td>{{ asset.last_seen }}</td>
+            </tr>
+          {% else %}<tr><td colspan="6">No protected IPs configured.</td></tr>{% endfor %}
+        </tbody></table></div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

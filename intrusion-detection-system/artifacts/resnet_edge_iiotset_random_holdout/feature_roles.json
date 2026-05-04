@@ -1,0 +1,730 @@
+{
+  "source_label": {
+    "role": "dropped_label_or_metadata"
+  },
+  "arp_hw_size": {
+    "role": "categorical",
+    "non_missing": 50000,
+    "unique": 5,
+    "numeric_valid": 0,
+    "numeric_ratio": 0.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0"
+    ]
+  },
+  "arp_opcode": {
+    "role": "numeric_native",
+    "non_missing": 50000,
+    "unique": 4,
+    "numeric_valid": 50000,
+    "numeric_ratio": 1.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0"
+    ]
+  },
+  "dns_qry_name": {
+    "role": "categorical",
+    "non_missing": 50000,
+    "unique": 245,
+    "numeric_valid": 0,
+    "numeric_ratio": 0.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0"
+    ]
+  },
+  "dns_qry_name_len": {
+    "role": "categorical",
+    "non_missing": 50000,
+    "unique": 5,
+    "numeric_valid": 0,
+    "numeric_ratio": 0.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0",
+      "0"
+    ]
+  },
+  "dns_qry_qu": {
+    "role": "categorical",
+    "non_missing": 50000,
+    "unique": 3,
+    "numeric_valid": 0,
+    "numeric_ratio": 0.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0",
+      "0"
+    ]
+  },
+  "dns_qry_type": {
+    "role": "numeric_native",
+    "non_missing": 50000,
+    "unique": 3,
+    "numeric_valid": 50000,
+    "numeric_ratio": 1.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0"
+    ]
+  },
+  "dns_retransmission": {
+    "role": "numeric_native",
+    "non_missing": 50000,
+    "unique": 2,
+    "numeric_valid": 50000,
+    "numeric_ratio": 1.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0"
+    ]
+  },
+  "dns_retransmit_request": {
+    "role": "dropped_constant_or_empty",
+    "non_missing": 50000,
+    "unique": 1
+  },
+  "dns_retransmit_request_in": {
+    "role": "dropped_constant_or_empty",
+    "non_missing": 50000,
+    "unique": 1
+  },
+  "http_content_length": {
+    "role": "numeric_native",
+    "non_missing": 50000,
+    "unique": 32,
+    "numeric_valid": 50000,
+    "numeric_ratio": 1.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0.0",
+      "57.0",
+      "0.0"
+    ]
+  },
+  "http_file_data": {
+    "role": "categorical",
+    "non_missing": 50000,
+    "unique": 459,
+    "numeric_valid": 0,
+    "numeric_ratio": 0.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0.0",
+      "method=open+service%3a3%2e0%2e2%2e1105&service%5fname=%2f",
+      "0.0"
+    ]
+  },
+  "http_referer": {
+    "role": "categorical",
+    "non_missing": 50000,
+    "unique": 4,
+    "numeric_valid": 0,
+    "numeric_ratio": 0.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0.0",
+      "0",
+      "0.0"
+    ]
+  },
+  "http_request_full_uri": {
+    "role": "dropped_high_cardinality_text",
+    "non_missing": 50000,
+    "unique": 2839,
+    "numeric_valid": 0,
+    "numeric_ratio": 0.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "http://192.168.0.128/DVWA/vulnerabilities/sqli_blind/?id=7%27%20AND%207796%3D%28SELECT%207796%20FROM%20PG_SLEEP%285%29%29%20AND%20%27kGlQ%27%3D%27kGlQ&Submit=Submitid=57",
+      "http://192.168.0.128/DVWA/s04.php?shopid=http://cirt.net/rfiinc.txt??",
+      "0.0"
+    ]
+  },
+  "http_request_method": {
+    "role": "categorical_forced",
+    "non_missing": 50000,
+    "unique": 7,
+    "numeric_valid": 0,
+    "numeric_ratio": 0.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "GET",
+      "GET",
+      "0.0"
+    ]
+  },
+  "http_request_uri_query": {
+    "role": "dropped_high_cardinality_text",
+    "non_missing": 50000,
+    "unique": 1044,
+    "numeric_valid": 0,
+    "numeric_ratio": 0.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "id=7%27%20AND%207796%3D%28SELECT%207796%20FROM%20PG_SLEEP%285%29%29%20AND%20%27kGlQ%27%3D%27kGlQ&Submit=Submitid=57",
+      "shopid=http://cirt.net/rfiinc.txt??",
+      "0.0"
+    ]
+  },
+  "http_request_version": {
+    "role": "categorical",
+    "non_missing": 50000,
+    "unique": 8,
+    "numeric_valid": 0,
+    "numeric_ratio": 0.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "HTTP/1.1",
+      "HTTP/1.1",
+      "0.0"
+    ]
+  },
+  "http_response": {
+    "role": "numeric_native",
+    "non_missing": 50000,
+    "unique": 2,
+    "numeric_valid": 50000,
+    "numeric_ratio": 1.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0"
+    ]
+  },
+  "http_tls_port": {
+    "role": "numeric_native",
+    "non_missing": 50000,
+    "unique": 906,
+    "numeric_valid": 50000,
+    "numeric_ratio": 1.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0"
+    ]
+  },
+  "icmp_checksum": {
+    "role": "dropped_high_cardinality_text",
+    "non_missing": 50000,
+    "unique": 2413,
+    "numeric_valid": 0,
+    "numeric_ratio": 0.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0",
+      "0"
+    ]
+  },
+  "icmp_seq_le": {
+    "role": "dropped_high_cardinality_text",
+    "non_missing": 50000,
+    "unique": 2589,
+    "numeric_valid": 0,
+    "numeric_ratio": 0.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0"
+    ]
+  },
+  "icmp_transmit_timestamp": {
+    "role": "numeric_native",
+    "non_missing": 50000,
+    "unique": 8,
+    "numeric_valid": 50000,
+    "numeric_ratio": 1.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0"
+    ]
+  },
+  "icmp_unused": {
+    "role": "dropped_constant_or_empty",
+    "non_missing": 50000,
+    "unique": 1
+  },
+  "mbtcp_len": {
+    "role": "numeric_native",
+    "non_missing": 50000,
+    "unique": 588,
+    "numeric_valid": 50000,
+    "numeric_ratio": 1.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0"
+    ]
+  },
+  "mbtcp_trans_id": {
+    "role": "numeric_native",
+    "non_missing": 50000,
+    "unique": 9,
+    "numeric_valid": 50000,
+    "numeric_ratio": 1.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0"
+    ]
+  },
+  "mbtcp_unit_id": {
+    "role": "dropped_constant_or_empty",
+    "non_missing": 50000,
+    "unique": 1
+  },
+  "mqtt_conack_flags": {
+    "role": "categorical",
+    "non_missing": 50000,
+    "unique": 3,
+    "numeric_valid": 0,
+    "numeric_ratio": 0.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0",
+      "0"
+    ]
+  },
+  "mqtt_conflag_cleansess": {
+    "role": "numeric_native",
+    "non_missing": 50000,
+    "unique": 2,
+    "numeric_valid": 50000,
+    "numeric_ratio": 1.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0"
+    ]
+  },
+  "mqtt_conflags": {
+    "role": "categorical",
+    "non_missing": 50000,
+    "unique": 3,
+    "numeric_valid": 0,
+    "numeric_ratio": 0.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0",
+      "0"
+    ]
+  },
+  "mqtt_hdrflags": {
+    "role": "categorical",
+    "non_missing": 50000,
+    "unique": 6,
+    "numeric_valid": 0,
+    "numeric_ratio": 0.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0",
+      "0"
+    ]
+  },
+  "mqtt_len": {
+    "role": "numeric_native",
+    "non_missing": 50000,
+    "unique": 18,
+    "numeric_valid": 50000,
+    "numeric_ratio": 1.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0"
+    ]
+  },
+  "mqtt_msg": {
+    "role": "categorical",
+    "non_missing": 50000,
+    "unique": 129,
+    "numeric_valid": 0,
+    "numeric_ratio": 0.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0",
+      "0"
+    ]
+  },
+  "mqtt_msg_decoded_as": {
+    "role": "dropped_constant_or_empty",
+    "non_missing": 50000,
+    "unique": 1
+  },
+  "mqtt_msgtype": {
+    "role": "numeric_native",
+    "non_missing": 50000,
+    "unique": 5,
+    "numeric_valid": 50000,
+    "numeric_ratio": 1.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0"
+    ]
+  },
+  "mqtt_proto_len": {
+    "role": "numeric_native",
+    "non_missing": 50000,
+    "unique": 2,
+    "numeric_valid": 50000,
+    "numeric_ratio": 1.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0"
+    ]
+  },
+  "mqtt_protoname": {
+    "role": "categorical_forced",
+    "non_missing": 50000,
+    "unique": 3,
+    "numeric_valid": 0,
+    "numeric_ratio": 0.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0",
+      "0"
+    ]
+  },
+  "mqtt_topic": {
+    "role": "categorical",
+    "non_missing": 50000,
+    "unique": 11,
+    "numeric_valid": 0,
+    "numeric_ratio": 0.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0",
+      "0"
+    ]
+  },
+  "mqtt_topic_len": {
+    "role": "numeric_native",
+    "non_missing": 50000,
+    "unique": 8,
+    "numeric_valid": 50000,
+    "numeric_ratio": 1.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0"
+    ]
+  },
+  "mqtt_ver": {
+    "role": "numeric_native",
+    "non_missing": 50000,
+    "unique": 12,
+    "numeric_valid": 50000,
+    "numeric_ratio": 1.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0"
+    ]
+  },
+  "tcp_ack": {
+    "role": "numeric_native",
+    "non_missing": 50000,
+    "unique": 8483,
+    "numeric_valid": 50000,
+    "numeric_ratio": 1.0,
+    "sample": [
+      "121.0",
+      "729178686.0",
+      "1.0",
+      "10397.0",
+      "59.0"
+    ]
+  },
+  "tcp_ack_raw": {
+    "role": "dropped_high_cardinality_text",
+    "non_missing": 50000,
+    "unique": 37906,
+    "numeric_valid": 0,
+    "numeric_ratio": 0.0,
+    "sample": [
+      "91010244.0",
+      "729178686.0",
+      "410476316.0",
+      "1912964429.0",
+      "1261450189.0"
+    ]
+  },
+  "tcp_checksum": {
+    "role": "dropped_high_cardinality_text",
+    "non_missing": 50000,
+    "unique": 31912,
+    "numeric_valid": 0,
+    "numeric_ratio": 0.0,
+    "sample": [
+      "0x00008455",
+      "0x000065e6",
+      "0x0000ca7a",
+      "0x00006e19",
+      "0x00008ed1"
+    ]
+  },
+  "tcp_connection_fin": {
+    "role": "numeric_native",
+    "non_missing": 50000,
+    "unique": 2,
+    "numeric_valid": 50000,
+    "numeric_ratio": 1.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0",
+      "1.0"
+    ]
+  },
+  "tcp_connection_rst": {
+    "role": "numeric_native",
+    "non_missing": 50000,
+    "unique": 2,
+    "numeric_valid": 50000,
+    "numeric_ratio": 1.0,
+    "sample": [
+      "1.0",
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0"
+    ]
+  },
+  "tcp_connection_syn": {
+    "role": "numeric_native",
+    "non_missing": 50000,
+    "unique": 2,
+    "numeric_valid": 50000,
+    "numeric_ratio": 1.0,
+    "sample": [
+      "0.0",
+      "1.0",
+      "0.0",
+      "0.0",
+      "0.0"
+    ]
+  },
+  "tcp_connection_synack": {
+    "role": "numeric_native",
+    "non_missing": 50000,
+    "unique": 15,
+    "numeric_valid": 50000,
+    "numeric_ratio": 1.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0"
+    ]
+  },
+  "tcp_dstport": {
+    "role": "dropped_high_cardinality_text",
+    "non_missing": 50000,
+    "unique": 12241,
+    "numeric_valid": 0,
+    "numeric_ratio": 0.0,
+    "sample": [
+      "41642.0",
+      "80.0",
+      "80.0",
+      "80.0",
+      "56966.0"
+    ]
+  },
+  "tcp_flags": {
+    "role": "categorical_forced",
+    "non_missing": 50000,
+    "unique": 11,
+    "numeric_valid": 0,
+    "numeric_ratio": 0.0,
+    "sample": [
+      "0x00000014",
+      "0x00000002",
+      "0x00000018",
+      "0x00000018",
+      "0x00000011"
+    ]
+  },
+  "tcp_flags_ack": {
+    "role": "numeric_native",
+    "non_missing": 50000,
+    "unique": 19,
+    "numeric_valid": 50000,
+    "numeric_ratio": 1.0,
+    "sample": [
+      "1.0",
+      "0.0",
+      "1.0",
+      "1.0",
+      "1.0"
+    ]
+  },
+  "tcp_len": {
+    "role": "categorical",
+    "non_missing": 50000,
+    "unique": 464,
+    "numeric_valid": 0,
+    "numeric_ratio": 0.0,
+    "sample": [
+      "0.0",
+      "120.0",
+      "377.0",
+      "307.0",
+      "0.0"
+    ]
+  },
+  "tcp_options": {
+    "role": "dropped_high_cardinality_text",
+    "non_missing": 50000,
+    "unique": 30130,
+    "numeric_valid": 0,
+    "numeric_ratio": 0.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0101080a9b256c6a9eb2ff24",
+      "0101080a3fc689f44947b62f",
+      "0"
+    ]
+  },
+  "tcp_payload": {
+    "role": "dropped_high_cardinality_text",
+    "non_missing": 50000,
+    "unique": 11229,
+    "numeric_valid": 0,
+    "numeric_ratio": 0.0,
+    "sample": [
+      "0",
+      "585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858585858",
+      "474554202f445657412f76756c6e65726162696c69746965732f73716c695f626c696e642f3f69643d37253237253230414e442532303737393625334425323853454c4543542532303737393625323046524f4d25323050475f534c45455025323835253239253239253230414e442532302532376b476c512532372533442532376b476c51265375626d69743d5375626d697469643d353720485454502f312e310d0a43616368652d436f6e74726f6c3a206e6f2d63616368650d0a436f6f6b69653a20e2809d5048505345535349443d31307566326f706e6d6e6c3770677073646d74347036716134710d0a557365722d4167656e743a2073716c6d61702f312e352e3823737461626c652028687474703a2f2f73716c6d61702e6f7267290d0a486f73743a203139322e3136382e302e3132380d0a4163636570743a202a2f2a0d0a4163636570742d456e636f64696e673a20677a69702c6465666c6174650d0a436f6e6e656374696f6e3a20636c6f73650d0a0d0a",
+      "474554202f445657412f7330342e7068703f73686f7069643d687474703a2f2f636972742e6e65742f726669696e632e7478743f3f20485454502f312e310d0a436f6e74656e742d547970653a206170706c69636174696f6e2f782d7777772d666f726d2d75726c656e636f6465640d0a436f6e74656e742d4c656e6774683a2035370d0a436f6e6e656374696f6e3a204b6565702d416c6976650d0a486f73743a203139322e3136382e302e3132380d0a557365722d4167656e743a204d6f7a696c6c612f352e303020284e696b746f2f322e312e3629202845766173696f6e733a4e6f6e65292028546573743a303035373238290d0a0d0a6d6574686f643d6f70656e2b736572766963652533613325326530253265322532653131303526736572766963652535666e616d653d253266",
+      "0"
+    ]
+  },
+  "tcp_seq": {
+    "role": "numeric_native",
+    "non_missing": 50000,
+    "unique": 5259,
+    "numeric_valid": 50000,
+    "numeric_ratio": 1.0,
+    "sample": [
+      "1.0",
+      "0.0",
+      "1.0",
+      "6758.0",
+      "5.0"
+    ]
+  },
+  "tcp_srcport": {
+    "role": "numeric_native",
+    "non_missing": 50000,
+    "unique": 14774,
+    "numeric_valid": 50000,
+    "numeric_ratio": 1.0,
+    "sample": [
+      "80.0",
+      "50590.0",
+      "45042.0",
+      "51168.0",
+      "1883.0"
+    ]
+  },
+  "udp_port": {
+    "role": "numeric_native",
+    "non_missing": 50000,
+    "unique": 16,
+    "numeric_valid": 50000,
+    "numeric_ratio": 1.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0"
+    ]
+  },
+  "udp_time_delta": {
+    "role": "numeric_native",
+    "non_missing": 50000,
+    "unique": 20,
+    "numeric_valid": 50000,
+    "numeric_ratio": 1.0,
+    "sample": [
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0",
+      "0.0"
+    ]
+  }
+}

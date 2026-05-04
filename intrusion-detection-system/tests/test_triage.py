@@ -10,34 +10,43 @@ import pytest
 from app.triage import DEFAULT_MITRE_MAP, TriageService, _default_triage_item, _severity_for_label, _extract_json
 
 
-# ── Severity helper ─────────────────────────────────────────
+# -- Severity helper -----------------------------------------
 
 
 class TestSeverityForLabel:
+    """Group tests covering severity for label behavior."""
     def test_normal_always_low(self):
+        """Verify that normal always low."""
         assert _severity_for_label("normal", 0.99) == "low"
 
     def test_high_confidence_attack(self):
+        """Verify that high confidence attack."""
         assert _severity_for_label("ddos_dos", 0.95) == "high"
 
     def test_medium_confidence_attack(self):
+        """Verify that medium confidence attack."""
         assert _severity_for_label("backdoor", 0.75) == "medium"
 
     def test_low_confidence_attack(self):
+        """Verify that low confidence attack."""
         assert _severity_for_label("scanning", 0.5) == "review"
 
     def test_boundary_high(self):
+        """Verify that boundary high."""
         assert _severity_for_label("xss", 0.9) == "high"
 
     def test_boundary_medium(self):
+        """Verify that boundary medium."""
         assert _severity_for_label("xss", 0.7) == "medium"
 
 
-# ── Default triage item ─────────────────────────────────────
+# -- Default triage item -------------------------------------
 
 
 class TestDefaultTriageItem:
+    """Group tests covering default triage item behavior."""
     def test_normal_prediction(self):
+        """Verify that normal prediction."""
         pred = {"predicted_label": "normal", "confidence": 0.98}
         result = _default_triage_item(pred)
         assert result["label"] == "normal"
@@ -46,6 +55,7 @@ class TestDefaultTriageItem:
         assert result["source"] == "fallback"
 
     def test_ddos_prediction(self):
+        """Verify that ddos prediction."""
         pred = {"predicted_label": "ddos_dos", "confidence": 0.92}
         result = _default_triage_item(pred)
         assert result["label"] == "ddos_dos"
@@ -54,6 +64,7 @@ class TestDefaultTriageItem:
         assert any(t["id"] == "T1498" for t in result["mitre_techniques"])
 
     def test_unknown_label_fallback(self):
+        """Verify that unknown label fallback."""
         pred = {"predicted_label": "unknown_class", "confidence": 0.5}
         result = _default_triage_item(pred)
         assert result["label"] == "unknown_class"
@@ -61,6 +72,7 @@ class TestDefaultTriageItem:
 
     @pytest.mark.parametrize("label", list(DEFAULT_MITRE_MAP.keys()))
     def test_all_mapped_labels_produce_valid_triage(self, label):
+        """Verify that all mapped labels produce valid triage."""
         pred = {"predicted_label": label, "confidence": 0.85}
         result = _default_triage_item(pred)
         assert "label" in result
@@ -69,56 +81,68 @@ class TestDefaultTriageItem:
         assert "source" in result
 
 
-# ── JSON extraction ──────────────────────────────────────────
+# -- JSON extraction ------------------------------------------
 
 
 class TestExtractJson:
+    """Group tests covering extract json behavior."""
     def test_plain_json(self):
+        """Verify that plain json."""
         data = '{"label": "xss", "severity": "high"}'
         parsed = _extract_json(data)
         assert parsed["label"] == "xss"
 
     def test_fenced_json(self):
+        """Verify that fenced json."""
         data = '```json\n{"label": "backdoor"}\n```'
         parsed = _extract_json(data)
         assert parsed["label"] == "backdoor"
 
     def test_fenced_without_lang(self):
+        """Verify that fenced without lang."""
         data = '```\n{"label": "scanning"}\n```'
         parsed = _extract_json(data)
         assert parsed["label"] == "scanning"
 
     def test_json_with_surrounding_text(self):
+        """Verify that json with surrounding text."""
         data = 'Here is the result: {"label": "injection"} -- done'
         parsed = _extract_json(data)
         assert parsed["label"] == "injection"
 
     def test_invalid_json_raises(self):
+        """Verify that invalid json raises."""
         with pytest.raises((json.JSONDecodeError, ValueError)):
             _extract_json("not json at all")
 
 
-# ── TriageService (without LLM) ─────────────────────────────
+# -- TriageService (without LLM) -----------------------------
 
 
 class TestTriageServiceFallback:
+    """Group tests covering triage service fallback behavior."""
     def test_disabled_when_fallback_backend(self):
+        """Verify that disabled when fallback backend."""
         svc = TriageService(api_key=None, model="gemini-2.0-flash", timeout_seconds=10, triage_backend="fallback")
         assert svc.enabled is False
 
     def test_enabled_when_ollama_backend(self):
+        """Verify that enabled when ollama backend."""
         svc = TriageService(api_key=None, model="gemini-2.0-flash", timeout_seconds=10, triage_backend="ollama")
         assert svc.enabled is True
 
     def test_enabled_when_gemini_backend_with_key(self):
+        """Verify that enabled when gemini backend with key."""
         svc = TriageService(api_key="test-key", model="gemini-2.0-flash", timeout_seconds=10, triage_backend="gemini")
         assert svc.enabled is True
 
     def test_disabled_when_gemini_backend_without_key(self):
+        """Verify that disabled when gemini backend without key."""
         svc = TriageService(api_key=None, model="gemini-2.0-flash", timeout_seconds=10, triage_backend="gemini")
         assert svc.enabled is False
 
     def test_fallback_triage_for_single_prediction(self):
+        """Verify that fallback triage for single prediction."""
         svc = TriageService(api_key=None, model="gemini-2.0-flash", timeout_seconds=10, triage_backend="fallback")
         predictions = [{"predicted_label": "password", "confidence": 0.88}]
         records = [{"duration": 1, "src_bytes": 0, "dst_bytes": 0, "proto": "tcp"}]
@@ -129,6 +153,7 @@ class TestTriageServiceFallback:
         assert llm_error is None
 
     def test_fallback_triage_batch(self):
+        """Verify that fallback triage batch."""
         svc = TriageService(api_key=None, model="gemini-2.0-flash", timeout_seconds=10, triage_backend="fallback")
         predictions = [
             {"predicted_label": "normal", "confidence": 0.99},
@@ -143,7 +168,7 @@ class TestTriageServiceFallback:
         assert triage[2]["severity"] == "review"
 
 
-# ── Ollama backend (mocked) ─────────────────────────────────
+# -- Ollama backend (mocked) ---------------------------------
 
 MOCK_OLLAMA_RESPONSE = json.dumps({
     "label": "ddos_dos",
@@ -159,6 +184,7 @@ MOCK_OLLAMA_RESPONSE = json.dumps({
 
 
 def _make_ollama_svc(**overrides):
+    """Build a TriageService configured for mocked Ollama calls."""
     defaults = dict(
         api_key=None,
         model="gemini-2.0-flash",
@@ -174,6 +200,7 @@ def _make_ollama_svc(**overrides):
 
 
 class TestOllamaTriage:
+    """Group tests covering ollama triage behavior."""
     def test_tier1_only_high_confidence(self):
         """High-confidence prediction -> tier-1 only, no escalation."""
         svc = _make_ollama_svc()
@@ -211,6 +238,7 @@ class TestOllamaTriage:
         call_count = {"n": 0}
 
         def mock_chat(*, model, prompt_text):
+            """Return a mocked LLM chat response."""
             call_count["n"] += 1
             if model == "mistral-small:24b":
                 return MOCK_OLLAMA_RESPONSE
@@ -225,24 +253,50 @@ class TestOllamaTriage:
         assert llm_error is None
         assert "70b" in triage[0]["source"]
 
-    def test_escalation_on_review_severity(self):
-        """Severity=review -> escalates regardless of confidence."""
+    def test_review_severity_does_not_escalate_by_itself(self):
+        """Severity=review alone stays on tier-1."""
         svc = _make_ollama_svc()
-        pred = {"predicted_label": "scanning", "confidence": 0.55}
+        pred = {"predicted_label": "scanning", "confidence": 0.95}
         record = {"proto": "udp"}
 
         call_count = {"n": 0}
 
         def mock_chat(*, model, prompt_text):
+            """Return a mocked LLM chat response."""
             call_count["n"] += 1
             return MOCK_OLLAMA_RESPONSE
 
-        with patch.object(svc, "_ollama_chat", side_effect=mock_chat):
+        with (
+            patch("app.triage._severity_for_label", return_value="review"),
+            patch.object(svc, "_ollama_chat", side_effect=mock_chat),
+        ):
+            svc.triage_predictions(predictions=[pred], records=[record], context=None)
+
+        assert call_count["n"] == 1
+
+    def test_escalation_on_critical_severity(self):
+        """Severity=critical escalates even when confidence is otherwise high."""
+        svc = _make_ollama_svc()
+        pred = {"predicted_label": "scanning", "confidence": 0.95}
+        record = {"proto": "udp"}
+
+        call_count = {"n": 0}
+
+        def mock_chat(*, model, prompt_text):
+            """Return a mocked LLM chat response."""
+            call_count["n"] += 1
+            return MOCK_OLLAMA_RESPONSE
+
+        with (
+            patch("app.triage._severity_for_label", return_value="critical"),
+            patch.object(svc, "_ollama_chat", side_effect=mock_chat),
+        ):
             svc.triage_predictions(predictions=[pred], records=[record], context=None)
 
         assert call_count["n"] == 2
 
     def test_primary_unknown_uses_tier2_directly(self):
+        """Verify that primary unknown uses tier2 directly."""
         svc = _make_ollama_svc()
         pred = {"predicted_label": "unknown", "confidence": 0.40}
         record = {"proto": "tcp"}
@@ -260,6 +314,7 @@ class TestOllamaTriage:
         assert triage[0]["llm_reclassified"] is True
 
     def test_secondary_unknown_uses_tier1_only(self):
+        """Verify that secondary unknown uses tier1 only."""
         svc = _make_ollama_svc()
         pred = {"predicted_label": "unknown", "confidence": 0.40}
         record = {"proto": "tcp"}
@@ -285,6 +340,7 @@ class TestOllamaTriage:
         call_count = {"n": 0}
 
         def mock_chat(*, model, prompt_text):
+            """Return a mocked LLM chat response."""
             call_count["n"] += 1
             if "70b" in model:
                 raise TimeoutError("tier-2 timed out")
@@ -326,6 +382,7 @@ class TestOllamaTriage:
             assert mock_chat.call_count == 1
 
     def test_prompt_builder_produces_valid_json(self):
+        """Verify that prompt builder produces valid json."""
         pred = {"predicted_label": "scanning", "confidence": 0.85}
         record = {"proto": "tcp", "duration": 100}
         context = {"source": "clawdbot"}
@@ -351,6 +408,7 @@ class TestOllamaTriage:
         captured_prompts = []
 
         def mock_chat(*, model, prompt_text):
+            """Return a mocked LLM chat response."""
             captured_prompts.append(prompt_text)
             return MOCK_OLLAMA_RESPONSE
 
@@ -373,6 +431,7 @@ class TestOllamaTriage:
         captured_prompts = []
 
         def mock_chat(*, model, prompt_text):
+            """Return a mocked LLM chat response."""
             captured_prompts.append(prompt_text)
             return MOCK_OLLAMA_RESPONSE
 

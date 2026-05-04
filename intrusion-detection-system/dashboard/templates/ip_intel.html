@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IP Intelligence | Threat Intelligence</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+  <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}?v=20260422-1">
+</head>
+<body>
+  <div class="shell">
+    {% include "_sidebar.html" %}
+
+    <main class="intel-page">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Threat intelligence cache</p>
+          <h1>IP Intelligence</h1>
+          <p class="subhead">Observed attacker history, reputation scores, MITRE cache status, and local detection labels.</p>
+        </div>
+        <div class="status-card intel-status">
+          <span class="status-dot {% if intel.db_exists and not intel.error %}online{% endif %}"></span>
+          <div>
+            <small>Cache Status</small>
+            <strong>{% if intel.error %}attention{% elif intel.db_exists %}online{% else %}missing{% endif %}</strong>
+          </div>
+          <div>
+            <small>Tracked IPs</small>
+            <strong>{{ intel.total_ips }}</strong>
+          </div>
+          <div>
+            <small>Total Hits</small>
+            <strong>{{ intel.total_hits }}</strong>
+          </div>
+          <div>
+            <small>MITRE Rows</small>
+            <strong>{{ intel.mitre_count }}</strong>
+          </div>
+        </div>
+      </header>
+
+      {% if intel.error %}
+        <section class="panel intel-empty">
+          <span class="eyebrow">Cache unavailable</span>
+          <h2>{{ intel.error }}</h2>
+          <p class="muted">Expected database path: {{ intel.db_path }}</p>
+        </section>
+      {% elif not intel.db_exists %}
+        <section class="panel intel-empty">
+          <span class="eyebrow">Cache not created yet</span>
+          <h2>No threat intelligence database was found.</h2>
+          <p class="muted">ClawdBot creates the cache after the agent starts and records threat intelligence activity.</p>
+          <p class="muted">Expected database path: {{ intel.db_path }}</p>
+        </section>
+      {% else %}
+        <section class="kpi-grid intel-kpis">
+          <article class="kpi">
+            <span>Known-bad IPs</span>
+            <strong>{{ intel.known_bad }}</strong>
+            <small>High local severity or external reputation</small>
+          </article>
+          <article class="kpi">
+            <span>Suspicious IPs</span>
+            <strong>{{ intel.suspicious }}</strong>
+            <small>Moderate local or external signal</small>
+          </article>
+          <article class="kpi">
+            <span>External Checks</span>
+            <strong>{{ intel.external_checked }}</strong>
+            <small>AbuseIPDB, VirusTotal, or OTX queried</small>
+          </article>
+          <article class="kpi">
+            <span>MITRE Refreshed</span>
+            <strong class="kpi-time">{{ intel.mitre_updated }}</strong>
+            <small>Technique cache timestamp</small>
+          </article>
+        </section>
+
+        <section class="grid two intel-overview">
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <span class="eyebrow">Labels</span>
+                <h2>Most Observed Labels</h2>
+              </div>
+            </div>
+            {% if intel.top_labels %}
+              <div class="rank-list">
+                {% for item in intel.top_labels %}
+                  <div class="rank-row">
+                    <span class="rank-name">{{ item.name }}</span>
+                    <strong>{{ item.value }}</strong>
+                  </div>
+                {% endfor %}
+              </div>
+            {% else %}
+              <p class="muted">No labels recorded yet.</p>
+            {% endif %}
+          </article>
+
+          <article class="panel">
+          <div class="panel-head">
+            <div>
+              <span class="eyebrow">Database</span>
+              <h2>Cache Location</h2>
+            </div>
+              <a class="ghost-button" href="{{ url_for('export_ip_intel') }}">Export CSV</a>
+          </div>
+            <div class="intel-path">{{ intel.db_path }}</div>
+            <p class="muted">Rows are ordered by cumulative severity, hit count, and most recent activity.</p>
+          </article>
+        </section>
+
+        <section class="panel table-panel">
+          <div class="panel-head">
+            <div>
+              <span class="eyebrow">All tracked IPs</span>
+              <h2>Threat Intelligence Records</h2>
+            </div>
+            <span class="pill">{{ intel.total_ips }} IPs</span>
+          </div>
+          <div class="filter-bar">
+            <input class="filter-input" type="search" placeholder="Search IP, label, score..." data-filter-table="ipIntelTable">
+            <select class="filter-input" data-filter-table="ipIntelTable" data-filter-column="1">
+              <option value="">All reputations</option>
+              <option value="Known-bad">Known-bad</option>
+              <option value="Suspicious">Suspicious</option>
+              <option value="Unknown">Unknown</option>
+            </select>
+          </div>
+          <div class="table-wrap intel-table-wrap">
+            <table class="intel-table" id="ipIntelTable">
+              <thead>
+                <tr>
+                  <th>IP</th>
+                  <th>Reputation</th>
+                  <th>Hits</th>
+                  <th>Severity</th>
+                  <th>Labels</th>
+                  <th>AbuseIPDB</th>
+                  <th>VirusTotal</th>
+                  <th>OTX</th>
+                  <th>First Seen</th>
+                  <th>Last Seen</th>
+                  <th>API Checked</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in intel.rows %}
+                  <tr>
+                    <td class="ip-cell"><a href="{{ url_for('ip_detail', ip=row.ip) }}">{{ row.ip }}</a></td>
+                    <td><span class="intel-badge {{ row.badge_class }}">{{ row.badge }}</span></td>
+                    <td>{{ row.hit_count }}</td>
+                    <td>{{ row.cumulative_severity }}</td>
+                    <td>
+                      <div class="chip-row compact">
+                        {% for label in row.labels %}
+                          <span class="chip">{{ label }}</span>
+                        {% else %}
+                          <span class="muted">-</span>
+                        {% endfor %}
+                      </div>
+                    </td>
+                    <td>{{ row.abuseipdb_score }}</td>
+                    <td>{{ row.vt_malicious }}</td>
+                    <td>{{ row.otx_pulse_count }}</td>
+                    <td>{{ row.first_seen }}</td>
+                    <td>{{ row.last_seen }}</td>
+                    <td>{{ row.api_checked_at }}</td>
+                  </tr>
+                {% else %}
+                  <tr>
+                    <td colspan="11">No IP intelligence has been recorded yet.</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      {% endif %}
+    </main>
+  </div>
+  <script src="{{ url_for('static', filename='dashboard_pages.js') }}?v=20260418-3"></script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-"""Threat intelligence enrichment — external API lookups + local SQLite cache.
+"""Threat intelligence enrichment - external API lookups + local SQLite cache.
 
 Queries AbuseIPDB, VirusTotal, and OTX AlienVault for IP reputation data,
 caches results in a local SQLite database, and tracks per-IP attack history
@@ -8,11 +8,11 @@ The enrichment result is attached to each detection as a ``reputation`` dict
 that feeds into both Telegram alerts (badge) and the actuator (escalation).
 
 Design constraints:
-  • All external API calls are optional — missing keys simply skip that source.
-  • API failures are logged and silently skipped (never block the pipeline).
-  • SQLite uses WAL mode for concurrent read safety.
-  • Cached API results expire after a configurable TTL (default 24 h).
-  • MITRE ATT&CK data is fetched from the official STIX 2.1 feed on startup,
+  - All external API calls are optional - missing keys simply skip that source.
+  - API failures are logged and silently skipped (never block the pipeline).
+  - SQLite uses WAL mode for concurrent read safety.
+  - Cached API results expire after a configurable TTL (default 24 h).
+  - MITRE ATT&CK data is fetched from the official STIX 2.1 feed on startup,
     cached locally, and refreshed periodically.
 """
 
@@ -28,7 +28,7 @@ import urllib.request
 
 log = logging.getLogger(__name__)
 
-# ── Defaults ─────────────────────────────────────────────────
+# -- Defaults -------------------------------------------------
 
 DEFAULT_DB_PATH = "/data/ton-iot-project/fresh_start/data/threat_cache.db"
 API_CACHE_TTL = 86400  # 24 hours
@@ -48,13 +48,13 @@ BADGE_SUSPICIOUS = 2     # moderate history
 def _badge(cum_severity: int, abuseipdb_score: int, vt_malicious: int, otx_pulses: int) -> str:
     """Pick a reputation badge string based on all available signals."""
     if abuseipdb_score >= 80 or vt_malicious >= 3 or cum_severity >= BADGE_KNOWN_BAD:
-        return "\U0001f534 Known-bad"    # 🔴
+        return "Known-bad"
     if abuseipdb_score >= 40 or vt_malicious >= 1 or otx_pulses >= 3 or cum_severity >= BADGE_SUSPICIOUS:
-        return "\U0001f7e1 Suspicious"   # 🟡
-    return "\U0001f7e2 Unknown"          # 🟢
+        return "Suspicious"
+    return "Unknown"
 
 
-# ── SQLite threat cache ──────────────────────────────────────
+# -- SQLite threat cache --------------------------------------
 
 _SCHEMA = """\
 CREATE TABLE IF NOT EXISTS ip_intel (
@@ -90,6 +90,7 @@ class ThreatCache:
     """SQLite-backed per-IP threat intelligence cache."""
 
     def __init__(self, db_path: str = DEFAULT_DB_PATH):
+        """Initialize the threat cache instance."""
         self.db_path = db_path
         os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
@@ -100,9 +101,10 @@ class ThreatCache:
         log.info("ThreatCache opened: %s", db_path)
 
     def close(self) -> None:
+        """Close the SQLite connection."""
         self._conn.close()
 
-    # ── IP record CRUD ───────────────────────────────────────
+    # -- IP record CRUD ---------------------------------------
 
     def get(self, ip: str) -> dict | None:
         """Return the cached record for *ip*, or None."""
@@ -192,18 +194,31 @@ class ThreatCache:
         return [dict(r) for r in rows]
 
     def total_tracked(self) -> int:
+        """Return the number of IPs currently stored in the cache."""
         row = self._conn.execute("SELECT COUNT(*) AS c FROM ip_intel").fetchone()
         return row["c"]
 
-    # ── MITRE ATT&CK STIX cache ─────────────────────────────
+    def delete_ips(self, ips) -> int:
+        """Delete IPs from reputation history. Returns number of removed rows."""
+        clean = [str(ip).strip() for ip in ips if str(ip).strip()]
+        if not clean:
+            return 0
+        before = self._conn.total_changes
+        self._conn.executemany("DELETE FROM ip_intel WHERE ip = ?", [(ip,) for ip in clean])
+        self._conn.commit()
+        return self._conn.total_changes - before
+
+    # -- MITRE ATT&CK STIX cache -----------------------------
 
     def mitre_last_updated(self) -> float:
+        """Return the last MITRE STIX refresh timestamp."""
         row = self._conn.execute(
             "SELECT value FROM meta WHERE key = 'mitre_updated_at'"
         ).fetchone()
         return float(row["value"]) if row else 0.0
 
     def mitre_needs_refresh(self, ttl: int = MITRE_CACHE_TTL) -> bool:
+        """Return True when cached MITRE STIX data is stale."""
         return (time.time() - self.mitre_last_updated()) > ttl
 
     def store_mitre_techniques(self, techniques: list[dict]) -> int:
@@ -249,6 +264,7 @@ class ThreatCache:
         return result
 
     def mitre_technique_count(self) -> int:
+        """Return the number of cached MITRE techniques."""
         row = self._conn.execute("SELECT COUNT(*) AS c FROM mitre_attack").fetchone()
         return row["c"]
 
@@ -260,7 +276,7 @@ class ThreatCache:
         """
         if not tactics:
             return []
-        # Normalise "Command and Control" → "command-and-control"
+        # Normalise "Command and Control" -> "command-and-control"
         phase_names = [t.lower().replace(" ", "-") for t in tactics]
         conditions = " OR ".join(["tactics LIKE ?"] * len(phase_names))
         params: list = [f"%{pn}%" for pn in phase_names]
@@ -281,7 +297,7 @@ class ThreatCache:
         ]
 
 
-# ── External API clients ─────────────────────────────────────
+# -- External API clients -------------------------------------
 
 def _api_get(url: str, headers: dict, timeout: int = 10) -> dict | None:
     """Generic GET with JSON parsing. Returns None on any failure."""
@@ -295,7 +311,7 @@ def _api_get(url: str, headers: dict, timeout: int = 10) -> dict | None:
 
 
 def query_abuseipdb(ip: str, api_key: str) -> int | None:
-    """Query AbuseIPDB v2 for abuse confidence score (0–100). Returns None on failure."""
+    """Query AbuseIPDB v2 for abuse confidence score (0-100). Returns None on failure."""
     data = _api_get(
         f"https://api.abuseipdb.com/api/v2/check?ipAddress={ip}&maxAgeInDays=90",
         headers={"Key": api_key, "Accept": "application/json"},
@@ -337,12 +353,12 @@ def query_otx(ip: str, api_key: str) -> int | None:
         return None
 
 
-# ── MITRE STIX feed parser ───────────────────────────────────
+# -- MITRE STIX feed parser -----------------------------------
 
 def _parse_stix_techniques(bundle: dict) -> list[dict]:
     """Extract attack-pattern objects from a STIX 2.1 bundle."""
     techniques: list[dict] = []
-    # Build tactic lookup: stix_id → tactic short-name
+    # Build tactic lookup: stix_id -> tactic short-name
     tactic_map: dict[str, str] = {}
     for obj in bundle.get("objects", []):
         if obj.get("type") == "x-mitre-tactic":
@@ -405,7 +421,7 @@ def fetch_mitre_stix(url: str = MITRE_STIX_URL, timeout: int = 30) -> list[dict]
         return []
 
 
-# ── Main enrichment orchestrator ─────────────────────────────
+# -- Main enrichment orchestrator -----------------------------
 
 class ThreatIntel:
     """Orchestrates threat intelligence lookups and caching.
@@ -436,6 +452,7 @@ class ThreatIntel:
         api_cache_ttl: int = API_CACHE_TTL,
         mitre_stix_url: str = MITRE_STIX_URL,
     ):
+        """Initialize the threat intel instance."""
         self.cache = ThreatCache(db_path)
         self.abuseipdb_key = abuseipdb_key
         self.virustotal_key = virustotal_key
@@ -460,7 +477,8 @@ class ThreatIntel:
 
     @property
     def enabled(self) -> bool:
-        return True  # always enabled — local cache works without API keys
+        """Return True because local cache enrichment is always available."""
+        return True  # always enabled - local cache works without API keys
 
     def setup(self) -> None:
         """Refresh MITRE STIX data if stale (non-blocking on failure)."""
@@ -470,10 +488,11 @@ class ThreatIntel:
                 stored = self.cache.store_mitre_techniques(techniques)
                 log.info("Stored %d MITRE techniques in cache", stored)
             else:
-                log.warning("MITRE STIX refresh failed — using stale data (%d techniques cached)",
+                log.warning("MITRE STIX refresh failed - using stale data (%d techniques cached)",
                             self.cache.mitre_technique_count())
 
     def close(self) -> None:
+        """Close the SQLite connection."""
         self.cache.close()
 
     def enrich(

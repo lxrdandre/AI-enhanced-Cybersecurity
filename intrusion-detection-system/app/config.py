@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 
 def _detect_project_root() -> str:
+    """Detect the repository root used for default artifact paths."""
     env_root = os.environ.get("TON_IOT_PROJECT_ROOT")
     if env_root and os.path.isdir(env_root):
         return os.path.abspath(env_root)
@@ -16,6 +17,7 @@ def _detect_project_root() -> str:
 
 @dataclass(frozen=True)
 class Settings:
+    """Application settings loaded from environment variables."""
     project_root: str
     artifact_dir: str
     base_artifact_dir: str
@@ -42,9 +44,10 @@ class Settings:
 
     @staticmethod
     def from_env() -> "Settings":
+        """Build settings from environment variables and defaults."""
         project_root = _detect_project_root()
-        default_artifact_dir = os.path.join(project_root, "artifacts", "resnet_transfer_7class")
-        default_base_artifact_dir = os.path.join(project_root, "artifacts", "resnet_base")
+        default_artifact_dir = os.path.join(project_root, "artifacts", "resnet_cic_public")
+        default_base_artifact_dir = default_artifact_dir
         default_audit_path = os.path.join(project_root, "artifacts", "audit", "analyze_events.jsonl")
         default_threat_db = os.path.join(project_root, "data", "threat_cache.db")
 
@@ -52,7 +55,7 @@ class Settings:
             project_root=project_root,
             artifact_dir=os.environ.get("TON_IOT_ARTIFACT_DIR", default_artifact_dir),
             base_artifact_dir=os.environ.get("TON_IOT_BASE_ARTIFACT_DIR", default_base_artifact_dir),
-            model_filename=os.environ.get("TON_IOT_MODEL_FILENAME", "resnet_transfer_model_7class.keras"),
+            model_filename=os.environ.get("TON_IOT_MODEL_FILENAME", "resnet_model.keras"),
             base_model_filename=os.environ.get("TON_IOT_BASE_MODEL_FILENAME", "resnet_model.keras"),
             pipeline_filename=os.environ.get("TON_IOT_PIPELINE_FILENAME", "preprocessing_pipeline.pkl"),
             features_filename=os.environ.get("TON_IOT_FEATURES_FILENAME", "final_features.txt"),

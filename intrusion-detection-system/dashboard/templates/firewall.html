@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Firewall Control | Threat Intelligence</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+  <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}?v=20260422-1">
+</head>
+<body>
+  <div class="shell">
+    {% include "_sidebar.html" %}
+    <main>
+      <header class="hero"><div><p class="eyebrow">Active response</p><h1>Firewall Control</h1><p class="subhead">Queue manual block and unblock requests for the root ClawdBot agent to apply through nftables.</p></div></header>
+
+      <section class="grid two">
+        <article class="panel">
+          <div class="panel-head"><div><span class="eyebrow">Manual action</span><h2>Add IP to Blocklist</h2></div></div>
+          <form class="control-form" method="post" action="{{ url_for('firewall_block') }}">
+            <input name="ip" placeholder="203.0.113.50" required>
+            <input name="ttl" type="number" min="60" max="86400" value="3600">
+            <input name="reason" placeholder="Manual SOC block">
+            <button class="detail-button" type="submit">Queue Block</button>
+          </form>
+        </article>
+        <article class="panel">
+          <div class="panel-head"><div><span class="eyebrow">Manual action</span><h2>Remove IP from Blocklist</h2></div></div>
+          <form class="control-form" method="post" action="{{ url_for('firewall_unblock') }}">
+            <input name="ip" placeholder="203.0.113.50" required>
+            <input name="reason" placeholder="Manual unblock">
+            <button class="ghost-button" type="submit">Queue Unblock</button>
+          </form>
+        </article>
+      </section>
+
+      <section class="panel table-panel">
+        <div class="panel-head"><div><span class="eyebrow">Current view</span><h2>Active Blocks</h2></div><span class="pill">{{ firewall.active|length }} active</span></div>
+        <div class="table-wrap"><table><thead><tr><th>IP</th><th>Reason</th><th>Expires</th><th>Remaining</th><th>Mode</th><th>Action</th></tr></thead><tbody>
+          {% for row in firewall.active %}
+            <tr><td class="ip-cell">{{ row.ip }}</td><td>{{ row.reason }}</td><td>{{ row.expires_at }}</td><td>{{ row.seconds_remaining }}s</td><td>{{ "dry-run" if row.dry_run else "applied" }}</td><td><form method="post" action="{{ url_for('firewall_unblock') }}"><input type="hidden" name="ip" value="{{ row.ip }}"><input type="hidden" name="reason" value="dashboard active-block removal"><button class="detail-button" type="submit">Unblock</button></form></td></tr>
+          {% else %}<tr><td colspan="6">No active blocks derived from recent action logs.</td></tr>{% endfor %}
+        </tbody></table></div>
+      </section>
+
+      <section class="grid two">
+        <article class="panel"><div class="panel-head"><div><span class="eyebrow">Pending</span><h2>Pending Requests</h2></div></div>
+          {% if firewall.pending %}<div class="request-list">{% for req in firewall.pending %}<div class="sample-flow"><strong>{{ req.action }}</strong><span>{{ req.ip }} - {{ req.reason }}</span><small>pending</small></div>{% endfor %}</div>{% else %}<p class="muted">No pending firewall requests.</p>{% endif %}
+        </article>
+        <article class="panel"><div class="panel-head"><div><span class="eyebrow">Audit</span><h2>Recent Requests</h2></div></div>
+          {% if firewall.recent %}<div class="request-list">{% for req in firewall.recent %}<div class="sample-flow"><strong>{{ req.action }} - {{ req.status }}</strong><span>{{ req.ip }} - {{ req.reason }}</span><small>{{ req.result.skipped_reason if req.result else "queued" }}</small></div>{% endfor %}</div>{% else %}<p class="muted">No dashboard firewall requests recorded.</p>{% endif %}
+        </article>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

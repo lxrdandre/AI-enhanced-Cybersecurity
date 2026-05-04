@@ -13,6 +13,10 @@ Environment="TON_IOT_DASHBOARD_HOST=0.0.0.0"
 Environment="TON_IOT_DASHBOARD_PORT=5000"
 Environment="TON_IOT_DASHBOARD_API_URL=http://127.0.0.1:8000"
 Environment="TON_IOT_DASHBOARD_LOG_DIR=/data/ton-iot-project/fresh_start/logs"
+Environment="TON_IOT_DASHBOARD_THREAT_DB=/data/ton-iot-project/fresh_start/data/threat_cache.db"
+Environment="TON_IOT_DASHBOARD_PROTECTED_IPS=100.111.77.70"
+Environment="TON_IOT_DASHBOARD_PROTECTED_IPS_FILE=/data/ton-iot-project/fresh_start/data/protected_ips.json"
+Environment="TON_IOT_DASHBOARD_FIREWALL_QUEUE=/data/ton-iot-project/fresh_start/data/firewall_requests.json"
 EnvironmentFile=-/data/ton-iot-project/fresh_start/.env
 ExecStart=/data/ton-iot-project/venv_h200/bin/python -m dashboard.app
 Restart=on-failure

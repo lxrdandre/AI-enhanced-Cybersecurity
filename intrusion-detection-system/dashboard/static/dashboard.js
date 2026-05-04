@@ -7,19 +7,29 @@ const MAX_VISIBLE_TELEGRAM_TOASTS = 5;
 let refreshInFlight = false;
 let visibleIncidentCount = INCIDENT_PAGE_SIZE;
 let latestIncidentRows = [];
+let incidentFilters = { search: "", severity: "", label: "" };
 let telegramAlertsInitialized = false;
 let seenTelegramAlerts = loadSeenTelegramAlerts();
 const chartInstances = {};
 
+/**
+ * Format numeric values for compact dashboard display.
+ */
 function fmt(value) {
   return new Intl.NumberFormat().format(Number(value || 0));
 }
 
+/**
+ * Format a count as the dashboard possible-threat phrase.
+ */
 function possiblePhrase(value) {
   const count = Number(value || 0);
   return `${fmt(count)} possible`;
 }
 
+/**
+ * Return a compact relative age string.
+ */
 function relativeAge(epoch) {
   const value = Number(epoch || 0);
   if (!value) return "never";
@@ -33,15 +43,24 @@ function relativeAge(epoch) {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+/**
+ * Set text content for an element when it exists.
+ */
 function setText(id, value) {
   const el = document.getElementById(id);
   if (el) el.textContent = value;
 }
 
+/**
+ * Convert a severity value into a safe CSS class name.
+ */
 function severityClass(severity) {
   return String(severity || "unknown").toLowerCase().replace(/[^a-z0-9_-]/g, "");
 }
 
+/**
+ * Escape text before inserting it into HTML.
+ */
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -51,6 +70,9 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+/**
+ * Load seen telegram alerts from browser or API state.
+ */
 function loadSeenTelegramAlerts() {
   try {
     const values = JSON.parse(sessionStorage.getItem(TELEGRAM_SEEN_STORAGE_KEY) || "[]");
@@ -60,6 +82,9 @@ function loadSeenTelegramAlerts() {
   }
 }
 
+/**
+ * Save seen telegram alerts to browser state.
+ */
 function saveSeenTelegramAlerts() {
   try {
     const values = Array.from(seenTelegramAlerts).slice(-300);
@@ -70,6 +95,9 @@ function saveSeenTelegramAlerts() {
   }
 }
 
+/**
+ * Build a stable key for incident rows and Telegram popups.
+ */
 function incidentKey(row) {
   return String(row?.event_id || [
     row?.audit_id,
@@ -82,10 +110,16 @@ function incidentKey(row) {
   ].join("|"));
 }
 
+/**
+ * Return chart colors with an optional alpha suffix.
+ */
 function chartColors(opacity = 1) {
   return colors.map(color => opacity === 1 ? color : `${color}${Math.round(opacity * 255).toString(16).padStart(2, "0")}`);
 }
 
+/**
+ * Return shared Chart.js options for dashboard charts.
+ */
 function baseChartOptions() {
   return {
     responsive: true,
@@ -116,6 +150,9 @@ function baseChartOptions() {
   };
 }
 
+/**
+ * Create or update a Chart.js instance for a canvas.
+ */
 function replaceChart(canvasId, config) {
   const canvas = document.getElementById(canvasId);
   if (!canvas || !window.Chart) return null;
@@ -131,6 +168,9 @@ function replaceChart(canvasId, config) {
   return chartInstances[canvasId];
 }
 
+/**
+ * Draw timeline chart data.
+ */
 function drawTimeline(canvasId, points) {
   const safePoints = Array.isArray(points) ? points : [];
   if (!window.Chart) return;
@@ -186,6 +226,9 @@ function drawTimeline(canvasId, points) {
   });
 }
 
+/**
+ * Draw donut chart data.
+ */
 function drawDonut(canvasId, items, emptyLabel = "No data") {
   const safeItems = Array.isArray(items) ? items.filter(item => Number(item.value || 0) > 0) : [];
   if (!window.Chart) return;
@@ -228,6 +271,9 @@ function drawDonut(canvasId, items, emptyLabel = "No data") {
   });
 }
 
+/**
+ * Render bars into the dashboard DOM.
+ */
 function renderBars(id, items) {
   const el = document.getElementById(id);
   if (!el) return;
@@ -241,6 +287,9 @@ function renderBars(id, items) {
   `).join("") : `<p class="muted">No data yet.</p>`;
 }
 
+/**
+ * Render rank list into the dashboard DOM.
+ */
 function renderRankList(id, items) {
   const el = document.getElementById(id);
   if (!el) return;
@@ -252,6 +301,9 @@ function renderRankList(id, items) {
   `).join("") : `<p class="muted">No data yet.</p>`;
 }
 
+/**
+ * Render system pulse into the dashboard DOM.
+ */
 function renderSystemPulse(activity = {}, api = {}) {
   const validStates = new Set(["breathing", "thinking", "dead"]);
   const state = validStates.has(activity.state) ? activity.state : (api.online ? "breathing" : "dead");
@@ -292,22 +344,29 @@ function renderSystemPulse(activity = {}, api = {}) {
   }
 }
 
+/**
+ * Render incidents into the dashboard DOM.
+ */
 function renderIncidents(rows) {
   const el = document.getElementById("incidentRows");
   if (!el) return;
   latestIncidentRows = Array.isArray(rows) ? rows : [];
+  populateIncidentLabelFilter(latestIncidentRows);
+  const filteredRows = filterIncidentRows(latestIncidentRows);
   const countEl = document.getElementById("incidentCount");
   const button = document.getElementById("showMoreIncidents");
-  const visibleRows = latestIncidentRows.slice(0, visibleIncidentCount);
+  const visibleRows = filteredRows.slice(0, visibleIncidentCount);
 
-  if (!latestIncidentRows.length) {
+  if (!filteredRows.length) {
     el.innerHTML = `<tr><td colspan="12">No threat events recorded yet.</td></tr>`;
-    if (countEl) countEl.textContent = "Showing 0 of 0 detections";
+    if (countEl) countEl.textContent = `Showing 0 of ${latestIncidentRows.length} detections`;
     if (button) button.hidden = true;
     return;
   }
 
-  el.innerHTML = visibleRows.map((row, index) => `
+  el.innerHTML = visibleRows.map(row => {
+    const index = latestIncidentRows.indexOf(row);
+    return `
     <tr class="${row.telegram_sent ? "telegram-row" : ""}">
       <td>${escapeHtml(row.time)}</td>
       <td>${escapeHtml(row.label)}</td>
@@ -322,20 +381,81 @@ function renderIncidents(rows) {
       <td>${escapeHtml(row.summary || row.source || "-")}</td>
       <td><button class="detail-button" type="button" data-incident-index="${index}">Open</button></td>
     </tr>
-  `).join("");
+  `}).join("");
 
-  const shown = Math.min(visibleRows.length, latestIncidentRows.length);
-  if (countEl) countEl.textContent = `Showing ${shown} of ${latestIncidentRows.length} detections`;
+  const shown = Math.min(visibleRows.length, filteredRows.length);
+  if (countEl) countEl.textContent = `Showing ${shown} of ${filteredRows.length} matching detections (${latestIncidentRows.length} total)`;
   if (button) {
-    button.hidden = shown >= latestIncidentRows.length;
-    button.textContent = `Show ${Math.min(INCIDENT_PAGE_SIZE, latestIncidentRows.length - shown)} more`;
+    button.hidden = shown >= filteredRows.length;
+    button.textContent = `Show ${Math.min(INCIDENT_PAGE_SIZE, filteredRows.length - shown)} more`;
   }
 }
 
+/**
+ * Filter incident rows using active controls.
+ */
+function filterIncidentRows(rows) {
+  const query = incidentFilters.search.toLowerCase();
+  return rows.filter(row => {
+    if (incidentFilters.severity && String(row.severity || "").toLowerCase() !== incidentFilters.severity) return false;
+    if (incidentFilters.label && String(row.label || "").toLowerCase() !== incidentFilters.label) return false;
+    if (!query) return true;
+    return [row.label, row.severity, row.src, row.dst, row.port, row.summary, row.route]
+      .some(value => String(value || "").toLowerCase().includes(query));
+  });
+}
+
+/**
+ * Populate incident label filter controls.
+ */
+function populateIncidentLabelFilter(rows) {
+  const select = document.getElementById("incidentLabel");
+  if (!select) return;
+  const current = select.value;
+  const labels = Array.from(new Set(rows.map(row => String(row.label || "")).filter(Boolean))).sort();
+  select.innerHTML = `<option value="">All labels</option>` + labels.map(label =>
+    `<option value="${escapeHtml(label.toLowerCase())}">${escapeHtml(label)}</option>`
+  ).join("");
+  select.value = labels.map(label => label.toLowerCase()).includes(current) ? current : "";
+}
+
+/**
+ * Initialize incident filters behavior.
+ */
+function initIncidentFilters() {
+  const search = document.getElementById("incidentSearch");
+  const severity = document.getElementById("incidentSeverity");
+  const label = document.getElementById("incidentLabel");
+  search?.addEventListener("input", () => {
+    incidentFilters.search = search.value.trim();
+    visibleIncidentCount = INCIDENT_PAGE_SIZE;
+    renderIncidents(latestIncidentRows);
+  });
+  severity?.addEventListener("change", () => {
+    incidentFilters.severity = severity.value;
+    visibleIncidentCount = INCIDENT_PAGE_SIZE;
+    renderIncidents(latestIncidentRows);
+  });
+  label?.addEventListener("change", () => {
+    incidentFilters.label = label.value;
+    visibleIncidentCount = INCIDENT_PAGE_SIZE;
+    renderIncidents(latestIncidentRows);
+  });
+}
+
+/**
+ * Render telegram toast into the dashboard DOM.
+ */
 function renderTelegramToast(row) {
   const stack = document.getElementById("telegramToastStack");
   if (!stack) return;
   const key = incidentKey(row);
+  const firstTechnique = Array.isArray(row.mitre_techniques) && row.mitre_techniques.length
+    ? row.mitre_techniques[0]
+    : null;
+  const mitreText = firstTechnique
+    ? `MITRE ${firstTechnique.id || "unknown"} ${firstTechnique.name || ""}`.trim()
+    : "";
   const toast = document.createElement("article");
   toast.className = `telegram-toast ${severityClass(row.severity)}`;
   toast.dataset.alertKey = key;
@@ -346,7 +466,8 @@ function renderTelegramToast(row) {
     </div>
     <strong>${escapeHtml(row.label)} detected</strong>
     <p>${escapeHtml(row.src || "-")} -> ${escapeHtml(row.dst || "-")}:${escapeHtml(row.port || "-")}</p>
-    <small>${escapeHtml(row.severity || "unknown")} severity · confidence ${Number(row.confidence || 0).toFixed(3)} · ${escapeHtml(row.route || "-")}</small>
+    <small>${escapeHtml(row.severity || "unknown")} severity - confidence ${Number(row.confidence || 0).toFixed(3)} - ${escapeHtml(row.route || "-")}</small>
+    ${mitreText ? `<small>${escapeHtml(mitreText)}</small>` : ""}
     <div class="toast-actions">
       <button type="button" data-open-alert="${escapeHtml(key)}">Open incident</button>
     </div>
@@ -357,6 +478,9 @@ function renderTelegramToast(row) {
   }
 }
 
+/**
+ * Synchronize telegram popups with the current dashboard rows.
+ */
 function syncTelegramPopups(rows) {
   const telegramRows = (Array.isArray(rows) ? rows : []).filter(row =>
     row.telegram_sent && String(row.role || "").toLowerCase() === "primary"
@@ -380,27 +504,39 @@ function syncTelegramPopups(rows) {
   newRows.reverse().forEach(renderTelegramToast);
 }
 
+/**
+ * Render chips into the dashboard DOM.
+ */
 function renderChips(items) {
   return (items || []).length
     ? `<div class="chip-row">${items.map(item => `<span class="chip">${escapeHtml(item)}</span>`).join("")}</div>`
     : `<p class="muted">No tactics recorded.</p>`;
 }
 
+/**
+ * Render techniques into the dashboard DOM.
+ */
 function renderTechniques(items) {
   if (!items || !items.length) return `<p class="muted">No MITRE techniques recorded for this alert.</p>`;
   return `<div class="tech-list">${items.map(tech => `
     <article class="tech-card">
-      <strong>${escapeHtml(tech.id)} — ${escapeHtml(tech.name)}</strong>
+      <strong>${escapeHtml(tech.id)} - ${escapeHtml(tech.name)}</strong>
       ${tech.confidence ? `<small>Confidence: ${escapeHtml(tech.confidence)}</small>` : ""}
       ${tech.reason ? `<p>${escapeHtml(tech.reason)}</p>` : ""}
     </article>
   `).join("")}</div>`;
 }
 
+/**
+ * Render actions into the dashboard DOM.
+ */
 function renderActions(items) {
   return `<ol class="action-list">${(items || []).map(action => `<li>${escapeHtml(action)}</li>`).join("")}</ol>`;
 }
 
+/**
+ * Render secondary labels into the dashboard DOM.
+ */
 function renderSecondaryLabels(items) {
   if (!items || !items.length) return `<p class="muted">No secondary observations attached to this incident.</p>`;
   return `<div class="chip-row">${items.map(item =>
@@ -408,17 +544,23 @@ function renderSecondaryLabels(items) {
   ).join("")}</div>`;
 }
 
+/**
+ * Render sample flows into the dashboard DOM.
+ */
 function renderSampleFlows(items) {
   if (!items || !items.length) return `<p class="muted">No sample flows stored for this incident.</p>`;
   return `<div class="sample-flow-list">${items.map(flow => `
     <div class="sample-flow">
-      <strong>${escapeHtml(flow.label)} · ${escapeHtml(flow.role)}</strong>
+      <strong>${escapeHtml(flow.label)} - ${escapeHtml(flow.role)}</strong>
       <span>${escapeHtml(flow.proto || "-")} ${escapeHtml(flow.src || "-")}:${escapeHtml(flow.src_port || "-")} -> ${escapeHtml(flow.dst || "-")}:${escapeHtml(flow.dst_port || "-")}</span>
       <small>${escapeHtml(flow.time || "-")}</small>
     </div>
   `).join("")}</div>`;
 }
 
+/**
+ * Render probabilities into the dashboard DOM.
+ */
 function renderProbabilities(items) {
   if (!items || !items.length) return `<p class="muted">No probability distribution stored.</p>`;
   const max = Math.max(0.0001, ...items.map(item => Number(item.value || 0)));
@@ -431,14 +573,20 @@ function renderProbabilities(items) {
   `).join("")}</div>`;
 }
 
+/**
+ * Render block result into the dashboard DOM.
+ */
 function renderBlockResult(result) {
   if (!result) return `<p class="muted">No firewall action recorded.</p>`;
   const applied = result.applied ? "Applied" : "Not applied";
   const reason = result.skipped_reason ? ` (${result.skipped_reason})` : "";
   const ttl = result.ttl ? ` for ${result.ttl}s` : "";
-  return `<p>${escapeHtml(applied + reason + ttl)}${result.ip ? ` — ${escapeHtml(result.ip)}` : ""}</p>`;
+  return `<p>${escapeHtml(applied + reason + ttl)}${result.ip ? ` - ${escapeHtml(result.ip)}` : ""}</p>`;
 }
 
+/**
+ * Render reputation into the dashboard DOM.
+ */
 function renderReputation(reputation) {
   if (!reputation) return `<p class="muted">No reputation enrichment recorded.</p>`;
   const badge = reputation.badge || "Reputation available";
@@ -446,6 +594,9 @@ function renderReputation(reputation) {
   return `<p>${escapeHtml(badge)} (${escapeHtml(hits)} hit(s))</p>`;
 }
 
+/**
+ * Open incident details UI.
+ */
 function openIncidentDetails(index) {
   const row = latestIncidentRows[index];
   const modal = document.getElementById("incidentModal");
@@ -477,7 +628,7 @@ function openIncidentDetails(index) {
       <section class="detail-section">
         <h3>Incident Scope</h3>
         <p>${escapeHtml(flow)}</p>
-        <p class="muted">Time: ${escapeHtml(row.time)} · Primary: ${escapeHtml(row.primary_label || row.label)} · ${Number(row.flow_count || incidentSummary.flow_count || 1)} flow(s) · ${Number(row.possible_count || incidentSummary.possible_count || 0)} possible</p>
+        <p class="muted">Time: ${escapeHtml(row.time)} - Primary: ${escapeHtml(row.primary_label || row.label)} - ${Number(row.flow_count || incidentSummary.flow_count || 1)} flow(s) - ${Number(row.possible_count || incidentSummary.possible_count || 0)} possible</p>
         ${renderSecondaryLabels(incidentSummary.secondary_labels)}
       </section>
 
@@ -524,17 +675,26 @@ function openIncidentDetails(index) {
   modal.hidden = false;
 }
 
+/**
+ * Close incident details UI.
+ */
 function closeIncidentDetails() {
   const modal = document.getElementById("incidentModal");
   if (modal) modal.hidden = true;
 }
 
+/**
+ * Load metrics from browser or API state.
+ */
 async function loadMetrics() {
   const response = await fetch("/api/metrics", { cache: "no-store" });
   if (!response.ok) throw new Error(`metrics failed: ${response.status}`);
   return response.json();
 }
 
+/**
+ * Apply metrics to the current page.
+ */
 function applyMetrics(data) {
   const apiDot = document.getElementById("apiDot");
   apiDot?.classList.toggle("online", Boolean(data.api.online));
@@ -566,6 +726,50 @@ function applyMetrics(data) {
   syncTelegramPopups(latestIncidentRows);
 }
 
+/**
+ * Initialize section nav behavior.
+ */
+function initSectionNav() {
+  const links = Array.from(document.querySelectorAll("[data-section-link]"));
+  if (!links.length) return;
+  const sections = links
+    .map(link => ({
+      link,
+      section: document.querySelector(link.getAttribute("href")),
+    }))
+    .filter(item => item.section);
+
+  /**
+   * Set active content.
+   */
+  function setActive(link) {
+    links.forEach(item => item.classList.toggle("active", item === link));
+  }
+
+  /**
+   * Update the active section link based on scroll position.
+   */
+  function updateActiveSection() {
+    const offset = 140;
+    let current = sections[0];
+    for (const item of sections) {
+      if (item.section.getBoundingClientRect().top <= offset) {
+        current = item;
+      }
+    }
+    if (current) setActive(current.link);
+  }
+
+  links.forEach(link => {
+    link.addEventListener("click", () => setActive(link));
+  });
+  window.addEventListener("scroll", updateActiveSection, { passive: true });
+  updateActiveSection();
+}
+
+/**
+ * Refresh dashboard metrics from the API and update the page.
+ */
 async function refresh() {
   if (refreshInFlight) return;
   refreshInFlight = true;
@@ -586,6 +790,8 @@ async function refresh() {
 }
 
 refresh();
+initSectionNav();
+initIncidentFilters();
 setInterval(refresh, Math.max(2, refreshSeconds) * 1000);
 document.getElementById("showMoreIncidents")?.addEventListener("click", () => {
   visibleIncidentCount += INCIDENT_PAGE_SIZE;

@@ -8,12 +8,15 @@ from uuid import uuid4
 
 
 def _records_hash(records: list[dict]) -> str:
+    """Return a stable hash for the submitted records payload."""
     payload = json.dumps(records, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 class AuditLogger:
+    """Append API analysis audit events to a JSONL log."""
     def __init__(self, *, log_path: str):
+        """Create the audit log directory and store the target path."""
         self.log_path = log_path
         os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
 
@@ -27,6 +30,7 @@ class AuditLogger:
         llm_enabled: bool,
         llm_error: str | None,
     ) -> str:
+        """Write one analyze request/response audit entry."""
         audit_id = uuid4().hex
         row = {
             "audit_id": audit_id,

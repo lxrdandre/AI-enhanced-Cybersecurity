@@ -1,0 +1,158 @@
+{
+  "script": "resnet_base.py",
+  "dataset_name": "custom",
+  "data_csv": "/data/ton-iot-project/fresh_start/data/custom/tpot_finetune.csv",
+  "artifact_dir": "/data/ton-iot-project/fresh_start/artifacts/resnet_custom_temporal",
+  "model_path": "/data/ton-iot-project/fresh_start/artifacts/resnet_custom_temporal/resnet_model.keras",
+  "pipeline_path": "/data/ton-iot-project/fresh_start/artifacts/resnet_custom_temporal/preprocessing_pipeline.pkl",
+  "classes": [
+    "backdoor",
+    "dos_ddos",
+    "injection",
+    "normal",
+    "password",
+    "scanning",
+    "xss"
+  ],
+  "selected_features": [
+    "src_port",
+    "dst_port",
+    "proto",
+    "service",
+    "duration",
+    "src_bytes",
+    "dst_bytes",
+    "conn_state",
+    "missed_bytes",
+    "src_pkts",
+    "src_ip_bytes",
+    "dst_pkts",
+    "dst_ip_bytes",
+    "dns_query",
+    "dns_qclass",
+    "dns_qtype",
+    "dns_rcode",
+    "http_trans_depth",
+    "http_method",
+    "http_version",
+    "http_request_body_len",
+    "http_response_body_len",
+    "http_status_code",
+    "http_user_agent",
+    "ssl_cipher"
+  ],
+  "target_k": 25,
+  "batch_size": 1024,
+  "max_epochs": 100,
+  "seed": 42,
+  "learning_rate": 0.0005,
+  "split_mode": "temporal",
+  "split_info": {
+    "mode": "temporal",
+    "class_splits": {
+      "backdoor": {
+        "kind": "temporal",
+        "train": 4393,
+        "val": 1463,
+        "test": 1464
+      },
+      "dos_ddos": {
+        "kind": "temporal",
+        "train": 12000,
+        "val": 4000,
+        "test": 4000
+      },
+      "injection": {
+        "kind": "temporal",
+        "train": 6000,
+        "val": 2000,
+        "test": 2000
+      },
+      "normal": {
+        "kind": "temporal",
+        "train": 5539,
+        "val": 1846,
+        "test": 1846
+      },
+      "password": {
+        "kind": "temporal",
+        "train": 5995,
+        "val": 1998,
+        "test": 1999
+      },
+      "scanning": {
+        "kind": "temporal",
+        "train": 5998,
+        "val": 1999,
+        "test": 1999
+      },
+      "xss": {
+        "kind": "temporal",
+        "train": 6000,
+        "val": 2000,
+        "test": 2000
+      }
+    }
+  },
+  "temporal_fallback": "error",
+  "val_size": 0.2,
+  "test_size": 0.2,
+  "dedupe": {
+    "before": 80000,
+    "after": 76539,
+    "dropped": 3461
+  },
+  "smote_mode": "off",
+  "smote_enabled": false,
+  "smote_imbalance_ratio": 2.7316184839517414,
+  "smote_auto_threshold": 1.25,
+  "merge_dos_ddos": true,
+  "dos_ddos_half_sample": true,
+  "loss": {
+    "name": "CategoricalFocalCrossentropy",
+    "gamma": 2.0,
+    "alpha_clip": [
+      0.5,
+      5.0
+    ],
+    "alpha_min": 0.503582239151001,
+    "alpha_mean": 0.9999998807907104,
+    "alpha_max": 1.3755944967269897
+  },
+  "class_counts_after_cleanup": {
+    "backdoor": 7320,
+    "dos_ddos": 20000,
+    "injection": 10000,
+    "normal": 9231,
+    "password": 9992,
+    "scanning": 9996,
+    "xss": 10000
+  },
+  "train_counts": {
+    "backdoor": 4393,
+    "dos_ddos": 12000,
+    "injection": 6000,
+    "normal": 5539,
+    "password": 5995,
+    "scanning": 5998,
+    "xss": 6000
+  },
+  "val_counts": {
+    "backdoor": 1463,
+    "dos_ddos": 4000,
+    "injection": 2000,
+    "normal": 1846,
+    "password": 1998,
+    "scanning": 1999,
+    "xss": 2000
+  },
+  "test_counts": {
+    "backdoor": 1464,
+    "dos_ddos": 4000,
+    "injection": 2000,
+    "normal": 1846,
+    "password": 1999,
+    "scanning": 1999,
+    "xss": 2000
+  }
+}

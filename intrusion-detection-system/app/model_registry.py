@@ -51,6 +51,7 @@ def _register_pickle_compat_aliases() -> None:
 
 
 def _load_features_from_text(path: str) -> list[str]:
+    """Load ordered feature names from a plain-text artifact."""
     with open(path, "r") as f:
         features = [line.strip() for line in f.readlines()]
     return [feature for feature in features if feature]
@@ -64,6 +65,7 @@ def load_artifacts(
     features_filename: str,
     calibration_filename: str = "calibration.pkl",
 ) -> tuple[tf.keras.Model, dict, list[str], dict | None]:
+    """Load model, preprocessing, and metadata artifacts for inference."""
     model_path = os.path.join(artifact_dir, model_filename)
     pipeline_path = os.path.join(artifact_dir, pipeline_filename)
     features_path = os.path.join(artifact_dir, features_filename)
@@ -98,6 +100,7 @@ def load_artifacts(
 
 
 def load_domain_router(*, artifact_dir: str, router_filename: str = "domain_router.pkl") -> dict | None:
+    """Load the optional domain router artifact when present."""
     router_path = os.path.join(artifact_dir, router_filename)
     if not os.path.exists(router_path):
         return None
@@ -107,6 +110,7 @@ def load_domain_router(*, artifact_dir: str, router_filename: str = "domain_rout
 
 
 def load_model_file(path: str) -> tf.keras.Model:
+    """Load a Keras model from disk without compiling training losses."""
     if not os.path.exists(path):
         raise FileNotFoundError(f"Model file not found: {path}")
     configure_tensorflow_gpu()

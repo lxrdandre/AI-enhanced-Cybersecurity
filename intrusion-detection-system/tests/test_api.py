@@ -13,7 +13,7 @@ import pytest
 from tests.conftest import SAMPLE_ATTACK_RECORDS, SAMPLE_NORMAL_RECORD
 
 
-# ── Helpers to build a fake InferenceService ─────────────────
+# -- Helpers to build a fake InferenceService -----------------
 
 CLASS_NAMES = ["normal", "backdoor", "ddos_dos", "injection", "password", "scanning", "xss"]
 
@@ -36,6 +36,7 @@ def _fake_predict(records):
 
 
 def _build_mock_service():
+    """Build mock service."""
     svc = MagicMock()
     svc.model_name = "test_model"
     svc.class_names = CLASS_NAMES
@@ -53,11 +54,12 @@ def _build_mock_service():
     return svc
 
 
-# ── Patch app-level singletons before importing the TestClient ──
+# -- Patch app-level singletons before importing the TestClient --
 
 
 @pytest.fixture()
 def client():
+    """Provide a FastAPI test client with mocked services."""
     mock_service = _build_mock_service()
 
     with (
@@ -71,11 +73,13 @@ def client():
         yield TestClient(app)
 
 
-# ── Tests ────────────────────────────────────────────────────
+# -- Tests ----------------------------------------------------
 
 
 class TestRootEndpoint:
+    """Group tests covering root endpoint behavior."""
     def test_root_returns_routes(self, client):
+        """Verify that root returns routes."""
         resp = client.get("/")
         assert resp.status_code == 200
         body = resp.json()
@@ -83,14 +87,18 @@ class TestRootEndpoint:
 
 
 class TestHealthEndpoint:
+    """Group tests covering health endpoint behavior."""
     def test_health_ok(self, client):
+        """Verify that health ok."""
         resp = client.get("/health")
         assert resp.status_code == 200
         assert resp.json()["status"] == "ok"
 
 
 class TestMetadataEndpoint:
+    """Group tests covering metadata endpoint behavior."""
     def test_metadata_fields(self, client):
+        """Verify that metadata fields."""
         resp = client.get("/metadata")
         assert resp.status_code == 200
         body = resp.json()
@@ -99,7 +107,9 @@ class TestMetadataEndpoint:
 
 
 class TestPredictEndpoint:
+    """Group tests covering predict endpoint behavior."""
     def test_single_record(self, client):
+        """Verify that single record."""
         resp = client.post("/predict", json={"records": [SAMPLE_NORMAL_RECORD]})
         assert resp.status_code == 200
         body = resp.json()
@@ -110,21 +120,26 @@ class TestPredictEndpoint:
         assert pred["predicted_label"] in CLASS_NAMES
 
     def test_batch_records(self, client, batch_records):
+        """Verify that batch records."""
         resp = client.post("/predict", json={"records": batch_records})
         assert resp.status_code == 200
         assert len(resp.json()["predictions"]) == 10
 
     def test_empty_records_rejected(self, client):
+        """Verify that empty records rejected."""
         resp = client.post("/predict", json={"records": []})
         assert resp.status_code == 422
 
     def test_invalid_payload_rejected(self, client):
+        """Verify that invalid payload rejected."""
         resp = client.post("/predict", json={"records": "not_a_list"})
         assert resp.status_code == 422
 
 
 class TestAnalyzeEndpoint:
+    """Group tests covering analyze endpoint behavior."""
     def test_analyze_returns_triage(self, client):
+        """Verify that analyze returns triage."""
         payload = {"records": [SAMPLE_NORMAL_RECORD]}
         resp = client.post("/analyze", json=payload)
         assert resp.status_code == 200
@@ -134,6 +149,7 @@ class TestAnalyzeEndpoint:
         assert isinstance(body["triage"], list)
 
     def test_analyze_with_context(self, client):
+        """Verify that analyze with context."""
         payload = {
             "records": [SAMPLE_NORMAL_RECORD],
             "context": {"source": "clawdbot", "incident_id": "test-001"},
@@ -142,6 +158,7 @@ class TestAnalyzeEndpoint:
         assert resp.status_code == 200
 
     def test_analyze_attack_records(self, client):
+        """Verify that analyze attack records."""
         payload = {"records": SAMPLE_ATTACK_RECORDS}
         resp = client.post("/analyze", json=payload)
         assert resp.status_code == 200

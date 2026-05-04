@@ -8,7 +8,9 @@ from app.config import Settings, _detect_project_root
 
 
 class TestSettings:
+    """Group tests covering settings behavior."""
     def test_from_env_defaults(self, monkeypatch):
+        """Verify that from env defaults."""
         monkeypatch.delenv("TON_IOT_PROJECT_ROOT", raising=False)
         monkeypatch.delenv("TON_IOT_ARTIFACT_DIR", raising=False)
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
@@ -16,7 +18,10 @@ class TestSettings:
         monkeypatch.delenv("TON_IOT_TRIAGE_BACKEND", raising=False)
         monkeypatch.delenv("TON_IOT_BACKGROUND_TRIAGE", raising=False)
         settings = Settings.from_env()
-        assert settings.model_filename == "resnet_transfer_model_7class.keras"
+        assert settings.artifact_dir.endswith(os.path.join("artifacts", "resnet_cic_public"))
+        assert settings.base_artifact_dir.endswith(os.path.join("artifacts", "resnet_cic_public"))
+        assert settings.model_filename == "resnet_model.keras"
+        assert settings.base_model_filename == "resnet_model.keras"
         assert settings.pipeline_filename == "preprocessing_pipeline.pkl"
         assert settings.features_filename == "final_features.txt"
         assert settings.host == "0.0.0.0"
@@ -31,6 +36,7 @@ class TestSettings:
         assert settings.unknown_confidence_threshold == 0.45
 
     def test_env_overrides(self, monkeypatch):
+        """Verify that env overrides."""
         monkeypatch.setenv("TON_IOT_API_PORT", "9999")
         monkeypatch.setenv("TON_IOT_API_HOST", "127.0.0.1")
         monkeypatch.setenv("GEMINI_API_KEY", "test-key-123")
@@ -48,6 +54,7 @@ class TestSettings:
         assert settings.background_triage_enabled is True
 
     def test_gemini_key_none_by_default(self, monkeypatch):
+        """Verify that gemini key none by default."""
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
         settings = Settings.from_env()
         assert settings.gemini_api_key is None

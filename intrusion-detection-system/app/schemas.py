@@ -9,11 +9,13 @@ MAX_RECORD_KEYS = 512
 
 
 class PredictRequest(BaseModel):
+    """Request body for model prediction over one or more flow records."""
     records: list[dict[str, Any]] = Field(..., min_length=1, max_length=MAX_RECORDS_PER_REQUEST)
 
     @field_validator("records")
     @classmethod
     def validate_records(cls, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Validate record shape, size, and basic numeric field constraints."""
         for idx, record in enumerate(records):
             if not isinstance(record, dict) or not record:
                 raise ValueError(f"records[{idx}] must be a non-empty object")
@@ -43,6 +45,7 @@ class PredictRequest(BaseModel):
 
 
 class PredictionItem(BaseModel):
+    """Single model prediction with probability distribution and route metadata."""
     predicted_index: int
     predicted_label: str
     confidence: float
@@ -52,12 +55,14 @@ class PredictionItem(BaseModel):
 
 
 class PredictResponse(BaseModel):
+    """Response body for the prediction endpoint."""
     model_name: str
     class_names: list[str]
     predictions: list[PredictionItem]
 
 
 class MetadataResponse(BaseModel):
+    """Response body describing loaded model artifacts and input requirements."""
     model_name: str
     artifact_dir: str
     class_names: list[str]
@@ -71,10 +76,12 @@ class MetadataResponse(BaseModel):
 
 
 class AnalyzeRequest(PredictRequest):
+    """Analyze request with optional triage context."""
     context: dict[str, Any] | None = None
 
 
 class MitreTechnique(BaseModel):
+    """MITRE ATT&CK technique mapped to a detection."""
     id: str
     name: str
     confidence: str
@@ -82,6 +89,7 @@ class MitreTechnique(BaseModel):
 
 
 class TriageItem(BaseModel):
+    """SOC triage result attached to a model prediction."""
     label: str
     severity: str
     mitre_tactics: list[str]
@@ -93,6 +101,7 @@ class TriageItem(BaseModel):
 
 
 class AnalyzeResponse(BaseModel):
+    """Response body for inference plus SOC triage."""
     model_name: str
     class_names: list[str]
     predictions: list[PredictionItem]

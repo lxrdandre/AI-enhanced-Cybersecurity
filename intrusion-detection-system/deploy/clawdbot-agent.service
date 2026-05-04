@@ -11,19 +11,23 @@ Environment="PATH=/data/ton-iot-project/venv_h200/bin:/usr/local/bin:/usr/bin"
 Environment="CLAWDBOT_INTERFACE=wt0"
 Environment="CLAWDBOT_API_URL=http://127.0.0.1:8000"
 Environment="CLAWDBOT_HARVEST_INTERVAL=10"
+Environment="CLAWDBOT_LLM_DOUBLE_CHECK_DELAY_SECONDS=60"
 Environment="CLAWDBOT_SEVERITY_THRESHOLD=medium"
 Environment="CLAWDBOT_LOG_DIR=/data/ton-iot-project/fresh_start/logs"
-# Active response (firewall) — start with dry-run until validated
+# Active response (firewall) - start with dry-run until validated
 Environment="CLAWDBOT_ACTUATOR_ENABLED=true"
 Environment="CLAWDBOT_ACTUATOR_DRY_RUN=true"
 Environment="CLAWDBOT_ACTUATOR_TTL=3600"
 Environment="CLAWDBOT_ACTUATOR_WHITELIST=100.111.76.168,100.111.77.70"
+Environment="CLAWDBOT_PROTECTED_IPS=100.111.77.70"
+Environment="CLAWDBOT_PROTECTED_IPS_FILE=/data/ton-iot-project/fresh_start/data/protected_ips.json"
+Environment="CLAWDBOT_FIREWALL_QUEUE=/data/ton-iot-project/fresh_start/data/firewall_requests.json"
 # Management ports to ignore between whitelisted peers (SSH, etc.)
 Environment="CLAWDBOT_IGNORE_PORTS=22,64295,5000,8000"
-# Threat intelligence — API keys go in .env, cache path here
+# Threat intelligence - API keys go in .env, cache path here
 Environment="CLAWDBOT_THREAT_INTEL_DB=/data/ton-iot-project/fresh_start/data/threat_cache.db"
 Environment="CLAWDBOT_THREAT_INTEL_TTL=86400"
-# API keys — add to .env file instead of hardcoding here:
+# API keys - add to .env file instead of hardcoding here:
 #   ABUSEIPDB_API_KEY=your-key
 #   VIRUSTOTAL_API_KEY=your-key
 #   OTX_API_KEY=your-key

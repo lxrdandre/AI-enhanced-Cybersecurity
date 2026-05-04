@@ -9,7 +9,9 @@ from app.preprocessing import SafeLabelEncoder
 
 
 class TestSafeLabelEncoder:
+    """Group tests covering safe label encoder behavior."""
     def test_fit_transform_known_labels(self):
+        """Verify that fit transform known labels."""
         enc = SafeLabelEncoder()
         enc.fit(["tcp", "udp", "icmp"])
         result = enc.transform(["tcp", "udp", "icmp"])
@@ -17,12 +19,14 @@ class TestSafeLabelEncoder:
         assert set(result.tolist()) == {1, 2, 3}
 
     def test_unknown_label_maps_to_zero(self):
+        """Verify that unknown label maps to zero."""
         enc = SafeLabelEncoder()
         enc.fit(["tcp", "udp"])
         result = enc.transform(["tcp", "unknown_proto"])
         assert result[1] == 0
 
     def test_deterministic_ordering(self):
+        """Verify that deterministic ordering."""
         enc = SafeLabelEncoder()
         enc.fit(["b", "a", "c"])
         r1 = enc.transform(["a", "b", "c"])
@@ -30,6 +34,7 @@ class TestSafeLabelEncoder:
         np.testing.assert_array_equal(r1, r2)
 
     def test_empty_fit(self):
+        """Verify that empty fit."""
         enc = SafeLabelEncoder()
         enc.fit([])
         result = enc.transform(["anything"])

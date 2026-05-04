@@ -8,6 +8,14 @@ import urllib.request
 
 log = logging.getLogger(__name__)
 
+IDS_CLASSES = ("backdoor", "ddos_dos", "infiltration", "normal", "password", "scanning", "unknown")
+
+
+def canon_label(label: object) -> str:
+    """Return the canonical IDS label used by triage and response logic."""
+    value = str(label).strip().lower()
+    return "ddos_dos" if value in {"dos", "ddos", "dos_ddos", "ddos_dos"} else value
+
 
 DEFAULT_MITRE_MAP = {
     "backdoor": {
@@ -23,10 +31,24 @@ DEFAULT_MITRE_MAP = {
             {"id": "T1498", "name": "Network Denial of Service"},
         ],
     },
+    "dos_ddos": {
+        "tactics": ["Impact"],
+        "techniques": [
+            {"id": "T1498", "name": "Network Denial of Service"},
+        ],
+    },
     "injection": {
         "tactics": ["Initial Access", "Execution"],
         "techniques": [
             {"id": "T1190", "name": "Exploit Public-Facing Application"},
+        ],
+    },
+    "infiltration": {
+        "tactics": ["Initial Access", "Discovery", "Lateral Movement"],
+        "techniques": [
+            {"id": "T1190", "name": "Exploit Public-Facing Application"},
+            {"id": "T1595", "name": "Active Scanning"},
+            {"id": "T1021", "name": "Remote Services"},
         ],
     },
     "password": {
@@ -54,7 +76,7 @@ DEFAULT_MITRE_MAP = {
     "unknown": {
         "tactics": ["Unknown"],
         "techniques": [
-            {"id": "T0000", "name": "Unclassified — model confidence below threshold"},
+            {"id": "T0000", "name": "Unclassified - model confidence below threshold"},
         ],
     },
 }
@@ -84,6 +106,12 @@ DEFAULT_RESPONSE_ACTIONS = {
         "Add a temporary WAF/API-gateway rule for the observed payload pattern while the code fix is deployed.",
         "Review database/application accounts for suspicious access or data changes around the detection time.",
     ],
+    "infiltration": [
+        "Treat the affected asset as potentially compromised and isolate it from other internal systems while validating impact.",
+        "Review process creation, login events, lateral movement indicators, and unusual east-west traffic around the detection time.",
+        "Inspect the host for persistence, tooling, scheduled tasks, remote-service abuse, and suspicious outbound connections.",
+        "Reset exposed credentials and scope neighboring systems for the same indicators before reconnecting the asset.",
+    ],
     "xss": [
         "Inspect request parameters and stored content for script/HTML injection payloads and affected pages.",
         "Apply output encoding, input validation, and a restrictive Content Security Policy for the affected route.",
@@ -110,10 +138,14 @@ DEFAULT_RESPONSE_ACTIONS = {
 
 
 def response_actions_for_label(label: str) -> list[str]:
+    """Return the default response checklist for a canonical IDS label."""
+    label = canon_label(label)
     return list(DEFAULT_RESPONSE_ACTIONS.get(label, DEFAULT_RESPONSE_ACTIONS["unknown"]))
 
 
 def _severity_for_label(label: str, confidence: float) -> str:
+    """Derive alert severity from IDS label and classifier confidence."""
+    label = canon_label(label)
     if label == "normal":
         return "low"
     if label == "unknown":
@@ -126,7 +158,8 @@ def _severity_for_label(label: str, confidence: float) -> str:
 
 
 def _default_triage_item(prediction: dict) -> dict:
-    label = str(prediction.get("predicted_label", "unknown"))
+    """Build a deterministic fallback triage item with MITRE mapping."""
+    label = canon_label(prediction.get("predicted_label", "unknown"))
     confidence = float(prediction.get("confidence", 0.0))
     mitre = DEFAULT_MITRE_MAP.get(label, {"tactics": [], "techniques": []})
 
@@ -153,6 +186,7 @@ def _default_triage_item(prediction: dict) -> dict:
 
 
 def _extract_json(text: str) -> dict:
+    """Extract a JSON object from raw LLM output text."""
     text = text.strip()
     fenced = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, re.DOTALL)
     if fenced:
@@ -167,6 +201,7 @@ def _extract_json(text: str) -> dict:
 
 
 class TriageService:
+    """Coordinate fallback, Ollama, and Gemini SOC triage backends."""
     def __init__(
         self,
         *,
@@ -180,6 +215,7 @@ class TriageService:
         triage_backend: str = "ollama",
         threat_cache=None,
     ):
+        """Initialize backend configuration and optional MITRE cache access."""
         self.api_key = api_key
         self.model = model
         self.timeout_seconds = timeout_seconds
@@ -192,30 +228,49 @@ class TriageService:
 
     @property
     def enabled(self) -> bool:
+        """Return whether this component is configured for use."""
         if self.triage_backend == "ollama":
             return True
         if self.triage_backend == "gemini":
             return bool(self.api_key)
         return False
 
-    # ── Shared prompt builder ────────────────────────────────
+    # -- Shared prompt builder --------------------------------
 
     @staticmethod
     def _build_prompt(prediction: dict, record: dict, context: dict | None) -> str:
-        label = str(prediction.get("predicted_label", "unknown"))
+        """Build the strict JSON prompt used for SOC triage and MITRE enrichment."""
+        label = canon_label(prediction.get("predicted_label", "unknown"))
         target = "incident" if str((context or {}).get("classification_scope", "")).lower() == "incident" else "flow"
-        if label == "unknown":
+        verification_mode = bool((context or {}).get("verification_mode"))
+        class_list = ", ".join(IDS_CLASSES)
+        if verification_mode:
             constraints = [
-                f"The classifier output is unknown; classify the {target} into the most likely IDS class if evidence supports it.",
-                "Use one of: backdoor, ddos_dos, injection, normal, password, scanning, xss, unknown.",
+                f"You are double-checking a deep-learning IDS {target} classification after a short settling window.",
+                f"The classifier label is '{label}'. Keep it if the evidence supports it.",
+                f"If evidence contradicts the classifier, relabel the {target} to the most likely IDS class.",
+                f"Use one of: {class_list}.",
                 f"Return unknown if the {target} is not classifiable from the provided fields.",
                 "Return JSON only.",
+                "Include MITRE tactics and techniques only when the record evidence supports the mapping.",
+                "Make the summary concise, evidence-based, and suitable for a Telegram SOC alert.",
+            ]
+        elif label == "unknown":
+            constraints = [
+                f"The classifier output is unknown; classify the {target} into the most likely IDS class if evidence supports it.",
+                f"Use one of: {class_list}.",
+                f"Return unknown if the {target} is not classifiable from the provided fields.",
+                "Return JSON only.",
+                "Include MITRE tactics and techniques only when the record evidence supports the mapping.",
+                "Make the summary concise, evidence-based, and suitable for a Telegram SOC alert.",
             ]
         else:
             constraints = [
                 "Do not relabel classifier output.",
                 "Return JSON only.",
                 "If uncertain, set severity to review.",
+                "Include MITRE tactics, techniques, confidence, and reason fields that explain the mapping.",
+                "Make next_actions concrete enough for a first responder to execute.",
             ]
         prompt = {
             "task": "SOC triage and MITRE enrichment",
@@ -240,11 +295,12 @@ class TriageService:
             "record": record,
             "context": context or {},
         }
-        return json.dumps(prompt, ensure_ascii=False)
+        return json.dumps(prompt, ensure_ascii=True)
 
-    # ── Ollama backend ───────────────────────────────────────
+    # -- Ollama backend ---------------------------------------
 
     def _ollama_chat(self, *, model: str, prompt_text: str) -> str:
+        """Call the configured Ollama chat endpoint and return message content."""
         url = f"{self.ollama_base_url}/api/chat"
         payload = {
             "model": model,
@@ -279,10 +335,12 @@ class TriageService:
         record: dict,
         context: dict | None,
     ) -> dict:
+        """Run Ollama triage, including tier-two escalation when needed."""
         confidence = float(prediction.get("confidence", 0.0))
-        label = str(prediction.get("predicted_label", "unknown"))
+        label = canon_label(prediction.get("predicted_label", "unknown"))
         severity = _severity_for_label(label, confidence)
         unknown_priority = str((context or {}).get("unknown_priority", "")).lower()
+        verification_mode = bool((context or {}).get("verification_mode"))
 
         # Inject STIX techniques relevant to this label's tactics
         enriched_context = dict(context or {})
@@ -307,17 +365,21 @@ class TriageService:
             else:
                 source = f"ollama:{self.ollama_model_tier2}"
             triage = _extract_json(text)
+            triage["label"] = canon_label(triage.get("label", label))
             needs_escalation = False
         else:
             text = self._ollama_chat(model=self.ollama_model_tier1, prompt_text=prompt_text)
             triage = _extract_json(text)
+            triage["label"] = canon_label(triage.get("label", label))
             source = f"ollama:{self.ollama_model_tier1}"
             needs_escalation = (
                 label == "unknown" and unknown_priority != "secondary"
             ) or (
                 label != "unknown"
-                and (confidence < self.ollama_escalation_confidence or severity in ("review", "critical"))
+                and (confidence < self.ollama_escalation_confidence or severity == "critical")
             )
+            if verification_mode and triage["label"] not in {label, "unknown"}:
+                needs_escalation = True
 
         if needs_escalation and self.ollama_model_tier2:
             log.info(
@@ -327,11 +389,12 @@ class TriageService:
             try:
                 text_t2 = self._ollama_chat(model=self.ollama_model_tier2, prompt_text=prompt_text)
                 triage = _extract_json(text_t2)
+                triage["label"] = canon_label(triage.get("label", label))
                 source = f"ollama:{self.ollama_model_tier2}"
             except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
                 log.warning("Tier-2 escalation failed, keeping tier-1 result: %s", exc)
 
-        triage.setdefault("label", prediction.get("predicted_label", "unknown"))
+        triage["label"] = canon_label(triage.get("label", prediction.get("predicted_label", "unknown")))
         triage.setdefault("source", source)
         triage.setdefault("mitre_tactics", [])
         triage.setdefault("mitre_techniques", [])
@@ -342,9 +405,10 @@ class TriageService:
 
         return triage
 
-    # ── Gemini backend (unchanged) ───────────────────────────
+    # -- Gemini backend (unchanged) ---------------------------
 
     def _gemini_triage(self, *, prediction: dict, record: dict, context: dict | None) -> dict:
+        """Run Gemini triage and normalize the response schema."""
         prompt_text = self._build_prompt(prediction, record, context)
 
         url = (
@@ -382,7 +446,7 @@ class TriageService:
         )
         triage = _extract_json(text)
 
-        triage.setdefault("label", prediction.get("predicted_label", "unknown"))
+        triage["label"] = canon_label(triage.get("label", prediction.get("predicted_label", "unknown")))
         triage.setdefault("source", "gemini")
         triage.setdefault("mitre_tactics", [])
         triage.setdefault("mitre_techniques", [])
@@ -394,12 +458,13 @@ class TriageService:
         return triage
 
     def triage_predictions(self, *, predictions: list[dict], records: list[dict], context: dict | None) -> tuple[list[dict], str | None]:
+        """Triage each prediction and return results plus any LLM error."""
         triage_results: list[dict] = []
         llm_error: str | None = None
 
         for idx, prediction in enumerate(predictions):
             record = records[idx] if idx < len(records) else {}
-            label = str(prediction.get("predicted_label", "unknown"))
+            label = canon_label(prediction.get("predicted_label", "unknown"))
 
             # Skip LLM for benign traffic only; unknown gets LLM fallback
             if label == "normal":

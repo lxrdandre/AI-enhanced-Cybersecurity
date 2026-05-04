@@ -1,4 +1,4 @@
-"""Tests for clawdbot.agent — orchestrator logic."""
+"""Tests for clawdbot.agent - orchestrator logic."""
 
 from __future__ import annotations
 
@@ -17,14 +17,18 @@ from clawdbot.agent import (
     _is_management_record,
     _parse_mgmt_ports,
     _post_analyze,
+    _process_due_llm_double_checks,
+    _schedule_llm_double_check,
 )
 
 
-# ── _post_analyze ─────────────────────────────────────────
+# -- _post_analyze -----------------------------------------
 
 class TestPostAnalyze:
+    """Group tests covering post analyze behavior."""
     @patch("clawdbot.agent.urllib.request.urlopen")
     def test_success(self, mock_urlopen):
+        """Verify that success."""
         api_response = {
             "model_name": "resnet",
             "class_names": ["normal", "ddos_dos"],
@@ -51,12 +55,14 @@ class TestPostAnalyze:
 
     @patch("clawdbot.agent.urllib.request.urlopen")
     def test_api_failure_returns_none(self, mock_urlopen):
+        """Verify that api failure returns none."""
         mock_urlopen.side_effect = TimeoutError("timeout")
         result = _post_analyze("http://localhost:8000", [{"duration": 1}])
         assert result is None
 
     @patch("clawdbot.agent.urllib.request.urlopen")
     def test_trailing_slash_handled(self, mock_urlopen):
+        """Verify that trailing slash handled."""
         mock_resp = MagicMock()
         mock_resp.__enter__ = MagicMock(return_value=mock_resp)
         mock_resp.__exit__ = MagicMock(return_value=False)
@@ -69,11 +75,14 @@ class TestPostAnalyze:
 
 
 class TestManagementFiltering:
+    """Group tests covering management filtering behavior."""
     def test_parse_mgmt_ports_keeps_dashboard_defaults(self):
+        """Verify that parse mgmt ports keeps dashboard defaults."""
         ports = _parse_mgmt_ports("22,64295")
         assert {22, 64295, 5000, 8000}.issubset(ports)
 
     def test_dashboard_flow_between_whitelisted_peers_is_management(self):
+        """Verify that dashboard flow between whitelisted peers is management."""
         whitelist = _parse_whitelist("100.111.76.168,100.111.77.70")
         record = {
             "_meta": {
@@ -86,6 +95,7 @@ class TestManagementFiltering:
         assert _is_management_record(record, whitelist, _parse_mgmt_ports(""))
 
     def test_non_management_port_is_not_filtered(self):
+        """Verify that non management port is not filtered."""
         whitelist = _parse_whitelist("100.111.76.168,100.111.77.70")
         record = {
             "_meta": {
@@ -98,15 +108,18 @@ class TestManagementFiltering:
         assert not _is_management_record(record, whitelist, _parse_mgmt_ports(""))
 
 
-# ── EventLogger ───────────────────────────────────────────
+# -- EventLogger -------------------------------------------
 
 class TestEventLogger:
+    """Group tests covering event logger behavior."""
     def test_creates_log_dir(self, tmp_path):
+        """Verify that creates log dir."""
         log_dir = tmp_path / "sub" / "logs"
         EventLogger(str(log_dir))
         assert log_dir.is_dir()
 
     def test_log_attack_writes_jsonl(self, tmp_path):
+        """Verify that log attack writes jsonl."""
         el = EventLogger(str(tmp_path))
         el.log_attack(
             prediction={
@@ -150,6 +163,7 @@ class TestEventLogger:
         assert "epoch" in event
 
     def test_log_attack_appends(self, tmp_path):
+        """Verify that log attack appends."""
         el = EventLogger(str(tmp_path))
         for _ in range(3):
             el.log_attack(
@@ -162,6 +176,7 @@ class TestEventLogger:
         assert len(lines) == 3
 
     def test_log_action_writes_to_actions_file(self, tmp_path):
+        """Verify that log action writes to actions file."""
         el = EventLogger(str(tmp_path))
         el.log_action(action="agent_start", detail={"interface": "eth0"})
         el.log_action(action="agent_stop")
@@ -175,6 +190,7 @@ class TestEventLogger:
         assert stop["event"] == "agent_stop"
 
     def test_log_attack_none_flow_meta(self, tmp_path):
+        """Verify that log attack none flow meta."""
         el = EventLogger(str(tmp_path))
         el.log_attack(
             prediction={"predicted_label": "xss", "confidence": 0.7},
@@ -187,6 +203,7 @@ class TestEventLogger:
 
 
 def test_incident_summary_counts_primary_and_secondary_labels():
+    """Verify that incident summary counts primary and secondary labels."""
     detections = [
         {"prediction": {"predicted_label": "scanning"}, "triage": {"label": "scanning", "incident_role": "primary", "incident_primary_label": "scanning"}},
         {"prediction": {"predicted_label": "scanning"}, "triage": {"label": "scanning", "incident_role": "primary", "incident_primary_label": "scanning"}},
@@ -204,13 +221,16 @@ def test_incident_summary_counts_primary_and_secondary_labels():
 
 
 class DummyTriageService:
+    """Represent dummy triage service state and behavior."""
     enabled = True
 
     def __init__(self, label: str = "scanning"):
+        """Initialize the dummy triage service instance."""
         self.label = label
         self.calls = []
 
     def triage_predictions(self, *, predictions, records, context):
+        """Return deterministic triage results for agent tests."""
         self.calls.append({"predictions": predictions, "records": records, "context": context})
         return [{
             "label": self.label,
@@ -223,7 +243,22 @@ class DummyTriageService:
         }], None
 
 
+class DummyNotifier:
+    """Represent dummy notifier state and behavior."""
+    enabled = True
+
+    def __init__(self):
+        """Initialize the dummy notifier instance."""
+        self.messages = []
+
+    def send_message(self, text: str) -> bool:
+        """Send message."""
+        self.messages.append(text)
+        return True
+
+
 def test_primary_unknown_incident_classified_once():
+    """Verify that primary unknown incident classified once."""
     detections = [
         {
             "prediction": {"predicted_label": "unknown", "confidence": 0.41},
@@ -250,6 +285,7 @@ def test_primary_unknown_incident_classified_once():
 
 
 def test_secondary_unknown_incident_not_sent_to_llm():
+    """Verify that secondary unknown incident not sent to llm."""
     detections = [
         {
             "prediction": {"predicted_label": "scanning", "confidence": 0.91},
@@ -270,8 +306,81 @@ def test_secondary_unknown_incident_not_sent_to_llm():
     assert detections[1]["triage"]["label"] == "unknown"
 
 
+def test_llm_double_check_schedules_known_model_attack(tmp_path):
+    """Verify that llm double check schedules known model attack."""
+    pending = {}
+    detections = [
+        {
+            "prediction": {"predicted_label": "dos_ddos", "confidence": 0.93, "probabilities": {"dos_ddos": 0.93}},
+            "triage": {"label": "ddos_dos", "incident_role": "primary", "incident_primary_label": "ddos_dos"},
+            "flow_meta": {"src_ip": "1.1.1.1", "dst_ip": "2.2.2.2", "dst_port": 80, "proto": "tcp"},
+            "record": {"proto": "tcp"},
+        }
+    ]
+
+    scheduled = _schedule_llm_double_check(
+        pending,
+        detections=detections,
+        incident_id="incident-1",
+        protected_ips=frozenset(),
+        now=100.0,
+        delay_seconds=60,
+    )
+
+    assert scheduled is True
+    assert len(pending) == 1
+    item = next(iter(pending.values()))
+    assert item["due_at"] == 160.0
+    assert item["prediction"]["predicted_label"] == "ddos_dos"
+
+
+def test_llm_double_check_runs_when_due(tmp_path):
+    """Verify that llm double check runs when due."""
+    pending = {}
+    detections = [
+        {
+            "prediction": {"predicted_label": "scanning", "confidence": 0.91, "probabilities": {"scanning": 0.91}},
+            "triage": {"label": "scanning", "incident_role": "primary", "incident_primary_label": "scanning"},
+            "flow_meta": {"src_ip": "1.1.1.1", "dst_ip": "2.2.2.2", "dst_port": 80, "proto": "tcp"},
+            "record": {"proto": "tcp"},
+        }
+    ]
+    _schedule_llm_double_check(
+        pending,
+        detections=detections,
+        incident_id="incident-1",
+        protected_ips=frozenset(),
+        now=100.0,
+        delay_seconds=60,
+    )
+    event_log = EventLogger(str(tmp_path))
+    notifier = DummyNotifier()
+    svc = DummyTriageService(label="password")
+
+    _process_due_llm_double_checks(
+        pending,
+        now=161.0,
+        triage_service=svc,
+        event_log=event_log,
+        protected_ips=frozenset(),
+        notifier=notifier,
+    )
+
+    assert pending == {}
+    assert len(svc.calls) == 1
+    assert svc.calls[0]["context"]["verification_mode"] == "delayed_double_check"
+    action = json.loads((tmp_path / "actions.jsonl").read_text().strip())
+    assert action["event"] == "llm_double_check"
+    assert action["detail"]["model_label"] == "scanning"
+    assert action["detail"]["llm_label"] == "password"
+    assert action["detail"]["verdict"] == "changed"
+    assert notifier.messages
+
+
 class TestIncidentRules:
+    """Group tests covering incident rules behavior."""
     def test_normal_fanout_promotes_to_scanning(self):
+        """Verify that normal fanout promotes to scanning."""
         detections = []
         for port in range(20, 35):
             detections.append({
@@ -293,6 +402,7 @@ class TestIncidentRules:
         assert any(t["id"] == "T1595" for t in out[0]["triage"]["mitre_techniques"])
 
     def test_scan_campaign_suppresses_secondary_labels(self):
+        """Verify that scan campaign suppresses secondary labels."""
         detections = []
         for port in range(20, 35):
             detections.append({
