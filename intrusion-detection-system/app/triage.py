@@ -411,10 +411,7 @@ class TriageService:
         """Run Gemini triage and normalize the response schema."""
         prompt_text = self._build_prompt(prediction, record, context)
 
-        url = (
-            f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
-            f"?key={self.api_key}"
-        )
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
         payload = {
             "contents": [
                 {
@@ -431,7 +428,7 @@ class TriageService:
             url=url,
             method="POST",
             data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", "x-goog-api-key": self.api_key or ""},
         )
 
         with urllib.request.urlopen(req, timeout=self.timeout_seconds) as resp:

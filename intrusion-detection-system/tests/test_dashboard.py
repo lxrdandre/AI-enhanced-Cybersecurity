@@ -996,10 +996,15 @@ def test_flask_index_renders_dashboard(tmp_path):
 
     assert response.status_code == 200
     assert b"Network Threat Operations" in response.data
+    assert b"dashboard_theme.js" in response.data
+    assert b"data-theme-toggle" in response.data
+    assert b"Light theme" in response.data
     assert b"cdn.jsdelivr.net/npm/chart.js" in response.data
     assert b"fonts.googleapis.com" in response.data
     assert b'telegramToastStack' in response.data
     assert b"System Pulse" in response.data
+    assert b"ai-core" in response.data
+    assert b"core-eye" in response.data
     assert b"Loaded Model" in response.data
     assert b"Routing" in response.data
     assert b"Open IP Intel" in response.data

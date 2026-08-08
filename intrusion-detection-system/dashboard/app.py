@@ -107,7 +107,7 @@ def settings_from_env() -> DashboardSettings:
         ignored_ports=_parse_ports(os.environ.get("TON_IOT_DASHBOARD_IGNORE_PORTS", "")),
         protected_ips=parse_ip_csv(
             os.environ.get("TON_IOT_DASHBOARD_PROTECTED_IPS")
-            or os.environ.get("CLAWDBOT_PROTECTED_IPS", "100.111.77.70")
+            or os.environ.get("CLAWDBOT_PROTECTED_IPS", "")
         ),
         health_services=_parse_csv_items(
             os.environ.get("TON_IOT_DASHBOARD_HEALTH_SERVICES", ""),
@@ -1376,18 +1376,18 @@ def _activity_metrics(
     if not api.get("online"):
         state = "dead"
         label = "dead"
-        headline = "No signal"
-        detail = "Dashboard is online, but the IDS API is not responding."
+        headline = "IoT VLAN telemetry link down"
+        detail = "Dashboard is online, but the IPS API is not responding."
     elif recent_attack or recent_analysis:
         state = "thinking"
         label = "thinking"
-        headline = "Cognition active"
-        detail = "Recent telemetry is being analyzed and triaged."
+        headline = "Inline IPS analyzing flows"
+        detail = "Recent IoT VLAN telemetry is being classified, triaged, and correlated."
     else:
         state = "breathing"
         label = "breathing"
-        headline = "Neural core online"
-        detail = "IDS API is healthy and waiting for the next flow batch."
+        headline = "IoT VLAN monitor online"
+        detail = "IPS API is healthy and waiting for the next device flow batch."
 
     return {
         "state": state,
@@ -1401,9 +1401,9 @@ def _activity_metrics(
         "recent_attack": recent_attack,
         "recent_analysis": recent_analysis,
         "signals": [
-            {"name": "IDS API", "value": api.get("status", "offline")},
+            {"name": "IPS API", "value": api.get("status", "offline")},
             {"name": "Router", "value": "enabled" if api.get("routing_enabled") else "single"},
-            {"name": "Analyzed", "value": int(audit["records"])},
+            {"name": "Flow records", "value": int(audit["records"])},
             {"name": "LLM errors", "value": int(audit["llm_errors"])},
         ],
     }
@@ -1469,6 +1469,11 @@ def build_metrics(settings: DashboardSettings | None = None) -> dict[str, Any]:
             "firewall_queue": settings.firewall_queue,
         },
         "api": api,
+        "deployment": {
+            "vlan": "IoT VLAN",
+            "ips_placement": "inline edge",
+            "protected_devices": len(protected_ips),
+        },
         "activity": _activity_metrics(api, attacks, actions, audits, audit, now),
         "kpis": {
             "risk_score": risk_score,

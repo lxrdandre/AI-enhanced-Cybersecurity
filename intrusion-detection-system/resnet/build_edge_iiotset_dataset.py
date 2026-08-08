@@ -614,7 +614,7 @@ def build_dataset(
 def build_parser() -> argparse.ArgumentParser:
     """Build the command-line argument parser."""
     parser = argparse.ArgumentParser(
-        description="Build the capped 6-class Edge-IIoTset CSV for the project ResNet pipeline.",
+        description="Build the capped 6-class Edge-IIoTset CSV for the project SE-DWNet pipeline.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(

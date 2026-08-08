@@ -46,7 +46,7 @@ class Settings:
     def from_env() -> "Settings":
         """Build settings from environment variables and defaults."""
         project_root = _detect_project_root()
-        default_artifact_dir = os.path.join(project_root, "artifacts", "resnet_cic_public")
+        default_artifact_dir = os.path.join(project_root, "artifacts", "se_dwnet_edge_iiotset_random_holdout")
         default_base_artifact_dir = default_artifact_dir
         default_audit_path = os.path.join(project_root, "artifacts", "audit", "analyze_events.jsonl")
         default_threat_db = os.path.join(project_root, "data", "threat_cache.db")
@@ -55,13 +55,13 @@ class Settings:
             project_root=project_root,
             artifact_dir=os.environ.get("TON_IOT_ARTIFACT_DIR", default_artifact_dir),
             base_artifact_dir=os.environ.get("TON_IOT_BASE_ARTIFACT_DIR", default_base_artifact_dir),
-            model_filename=os.environ.get("TON_IOT_MODEL_FILENAME", "resnet_model.keras"),
-            base_model_filename=os.environ.get("TON_IOT_BASE_MODEL_FILENAME", "resnet_model.keras"),
+            model_filename=os.environ.get("TON_IOT_MODEL_FILENAME", "se_dwnet_model.keras"),
+            base_model_filename=os.environ.get("TON_IOT_BASE_MODEL_FILENAME", "se_dwnet_model.keras"),
             pipeline_filename=os.environ.get("TON_IOT_PIPELINE_FILENAME", "preprocessing_pipeline.pkl"),
             features_filename=os.environ.get("TON_IOT_FEATURES_FILENAME", "final_features.txt"),
             calibration_filename=os.environ.get("TON_IOT_CALIBRATION_FILENAME", "calibration.pkl"),
             audit_log_path=os.environ.get("TON_IOT_AUDIT_LOG_PATH", default_audit_path),
-            triage_model=os.environ.get("TON_IOT_TRIAGE_MODEL", "gemini-2.0-flash"),
+            triage_model=os.environ.get("TON_IOT_TRIAGE_MODEL", "gemini-3.5-flash"),
             triage_timeout_seconds=int(os.environ.get("TON_IOT_TRIAGE_TIMEOUT_SECONDS", "30")),
             gemini_api_key=os.environ.get("GEMINI_API_KEY"),
             host=os.environ.get("TON_IOT_API_HOST", "0.0.0.0"),

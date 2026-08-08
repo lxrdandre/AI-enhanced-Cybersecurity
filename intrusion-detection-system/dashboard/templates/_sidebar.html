@@ -12,29 +12,30 @@
     <a href="#pulse" data-section-link>Pulse</a>
     <a href="#threats" data-section-link>Threats</a>
     <a href="#routing" data-section-link>Routing</a>
+    <a href="#events" data-section-link>Events</a>
     {% else %}
     <a href="{{ url_for('index') }}#overview">Overview</a>
     <a href="{{ url_for('index') }}#pulse">Pulse</a>
     <a href="{{ url_for('index') }}#threats">Threats</a>
     <a href="{{ url_for('index') }}#routing">Routing</a>
+    <a href="{{ url_for('index') }}#events">Events</a>
     {% endif %}
     <a class="{{ 'active' if active_page == 'ip_intel' else '' }}" href="{{ url_for('ip_intel') }}">IP Intel</a>
     <a class="{{ 'active' if active_page == 'firewall' else '' }}" href="{{ url_for('firewall') }}">Firewall</a>
-    <a class="{{ 'active' if active_page == 'protected_assets' else '' }}" href="{{ url_for('protected_assets') }}">Assets</a>
+    <a class="{{ 'active' if active_page == 'protected_assets' else '' }}" href="{{ url_for('protected_assets') }}">IoT Devices</a>
     <a class="{{ 'active' if active_page == 'mitre' else '' }}" href="{{ url_for('mitre') }}">MITRE</a>
     <a class="{{ 'active' if active_page == 'model_quality' else '' }}" href="{{ url_for('model_quality') }}">Model</a>
     <a class="{{ 'active' if active_page == 'health_panel' else '' }}" href="{{ url_for('health_panel') }}">Health</a>
-    {% if active_page == 'index' %}
-    <a href="#events" data-section-link>Events</a>
-    {% else %}
-    <a href="{{ url_for('index') }}#events">Events</a>
-    {% endif %}
   </nav>
   <div class="rail-card">
     <span>{{ rail_card_title|default("Data Source") }}</span>
-    <strong>{{ rail_card_strong|default("ClawdBot + IDS API") }}</strong>
+    <strong>{{ rail_card_strong|default("IoT VLAN") }}</strong>
     <small{% if rail_card_small_id is defined and rail_card_small_id %} id="{{ rail_card_small_id }}"{% endif %}>
-      {{ rail_card_small|default("Unified navigation across all pages.") }}
+      {{ rail_card_small|default("Protected devices are monitored before traffic leaves the VLAN.") }}
     </small>
   </div>
 </aside>
+<button class="theme-toggle" type="button" data-theme-toggle aria-pressed="false" aria-label="Switch to light theme">
+  <span class="theme-toggle-icon" aria-hidden="true"></span>
+  <span data-theme-toggle-label>Light theme</span>
+</button>

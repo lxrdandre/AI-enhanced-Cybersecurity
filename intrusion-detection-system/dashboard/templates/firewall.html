@@ -3,30 +3,31 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Firewall Control | Threat Intelligence</title>
+  <title>IoT VLAN Firewall Control | IPS Response</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
-  <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}?v=20260422-1">
+  <script src="{{ url_for('static', filename='dashboard_theme.js') }}?v=20260701"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}?v=20260701-theme2">
 </head>
 <body>
   <div class="shell">
     {% include "_sidebar.html" %}
     <main>
-      <header class="hero"><div><p class="eyebrow">Active response</p><h1>Firewall Control</h1><p class="subhead">Queue manual block and unblock requests for the root ClawdBot agent to apply through nftables.</p></div></header>
+      <header class="hero"><div><p class="eyebrow">IoT VLAN active response</p><h1>IoT VLAN Firewall Control</h1><p class="subhead">Queue block and unblock requests for originators reaching the IoT VLAN. The root ClawdBot agent applies approved response actions through nftables at the IPS host.</p></div></header>
 
       <section class="grid two">
         <article class="panel">
-          <div class="panel-head"><div><span class="eyebrow">Manual action</span><h2>Add IP to Blocklist</h2></div></div>
+          <div class="panel-head"><div><span class="eyebrow">Originator response</span><h2>Add IP to Blocklist</h2></div></div>
           <form class="control-form" method="post" action="{{ url_for('firewall_block') }}">
             <input name="ip" placeholder="203.0.113.50" required>
             <input name="ttl" type="number" min="60" max="86400" value="3600">
-            <input name="reason" placeholder="Manual SOC block">
+            <input name="reason" placeholder="IoT VLAN manual block">
             <button class="detail-button" type="submit">Queue Block</button>
           </form>
         </article>
         <article class="panel">
-          <div class="panel-head"><div><span class="eyebrow">Manual action</span><h2>Remove IP from Blocklist</h2></div></div>
+          <div class="panel-head"><div><span class="eyebrow">Originator response</span><h2>Remove IP from Blocklist</h2></div></div>
           <form class="control-form" method="post" action="{{ url_for('firewall_unblock') }}">
             <input name="ip" placeholder="203.0.113.50" required>
             <input name="reason" placeholder="Manual unblock">
@@ -36,7 +37,7 @@
       </section>
 
       <section class="panel table-panel">
-        <div class="panel-head"><div><span class="eyebrow">Current view</span><h2>Active Blocks</h2></div><span class="pill">{{ firewall.active|length }} active</span></div>
+        <div class="panel-head"><div><span class="eyebrow">IoT VLAN edge</span><h2>Active Blocks</h2></div><span class="pill">{{ firewall.active|length }} active</span></div>
         <div class="table-wrap"><table><thead><tr><th>IP</th><th>Reason</th><th>Expires</th><th>Remaining</th><th>Mode</th><th>Action</th></tr></thead><tbody>
           {% for row in firewall.active %}
             <tr><td class="ip-cell">{{ row.ip }}</td><td>{{ row.reason }}</td><td>{{ row.expires_at }}</td><td>{{ row.seconds_remaining }}s</td><td>{{ "dry-run" if row.dry_run else "applied" }}</td><td><form method="post" action="{{ url_for('firewall_unblock') }}"><input type="hidden" name="ip" value="{{ row.ip }}"><input type="hidden" name="reason" value="dashboard active-block removal"><button class="detail-button" type="submit">Unblock</button></form></td></tr>

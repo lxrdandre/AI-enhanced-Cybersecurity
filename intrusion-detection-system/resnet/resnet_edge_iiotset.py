@@ -153,7 +153,7 @@ def default_csv() -> str:
 
 def default_output_dir(project_root_path: str) -> str:
     """Return the default artifact directory for Edge-IIoTSet training."""
-    return os.path.join(project_root_path, "artifacts", "resnet_edge_iiotset")
+    return os.path.join(project_root_path, "artifacts", "se_dwnet_edge_iiotset")
 
 
 def canon_label(label: object) -> str:
@@ -1055,7 +1055,7 @@ def main() -> None:
     )
 
     print("Saving artifacts...")
-    model_path = os.path.join(artifact_dir, "resnet_model.keras")
+    model_path = os.path.join(artifact_dir, "se_dwnet_model.keras")
     model.save(model_path)
 
     pipeline_bundle = {
@@ -1154,7 +1154,7 @@ def main() -> None:
     print(report_str)
 
     with open(os.path.join(artifact_dir, "classification_report.txt"), "w", encoding="utf-8") as f:
-        f.write("=== ResNet Edge-IIoTset Evaluation ===\n")
+        f.write("=== SE-DWNet Edge-IIoTset Evaluation ===\n")
         f.write(f"CSV: {os.path.abspath(args.csv)}\n")
         f.write(f"Model: {model_path}\n")
         f.write(f"Loss: {loss_info}\n\n")
@@ -1163,11 +1163,11 @@ def main() -> None:
     cm = confusion_matrix(y_test_readable, y_pred_readable, labels=le_target.classes_)
     plt.figure(figsize=(12, 10))
     sns.heatmap(cm, annot=True, fmt="d", xticklabels=le_target.classes_, yticklabels=le_target.classes_, cmap="Blues")
-    plt.title("ResNet Edge-IIoTset Confusion Matrix")
+    plt.title("SE-DWNet Edge-IIoTset Confusion Matrix")
     plt.xlabel("Predicted")
     plt.ylabel("True")
     plt.tight_layout()
-    plt.savefig(os.path.join(artifact_dir, "resnet_edge_iiotset_confusion_matrix.png"), dpi=200)
+    plt.savefig(os.path.join(artifact_dir, "se_dwnet_edge_iiotset_confusion_matrix.png"), dpi=200)
     plt.close()
 
     if len(x_final_holdout_sel):
@@ -1188,7 +1188,7 @@ def main() -> None:
         print(holdout_report)
 
         with open(os.path.join(artifact_dir, "final_holdout_classification_report.txt"), "w", encoding="utf-8") as f:
-            f.write("=== ResNet Edge-IIoTset Final Holdout Evaluation ===\n")
+            f.write("=== SE-DWNet Edge-IIoTset Final Holdout Evaluation ===\n")
             f.write(f"CSV: {os.path.abspath(args.csv)}\n")
             f.write(f"Model: {model_path}\n")
             f.write(f"Loss: {loss_info}\n")
@@ -1205,11 +1205,11 @@ def main() -> None:
             yticklabels=le_target.classes_,
             cmap="Blues",
         )
-        plt.title("ResNet Edge-IIoTset Final Holdout Confusion Matrix")
+        plt.title("SE-DWNet Edge-IIoTset Final Holdout Confusion Matrix")
         plt.xlabel("Predicted")
         plt.ylabel("True")
         plt.tight_layout()
-        plt.savefig(os.path.join(artifact_dir, "resnet_edge_iiotset_final_holdout_confusion_matrix.png"), dpi=200)
+        plt.savefig(os.path.join(artifact_dir, "se_dwnet_edge_iiotset_final_holdout_confusion_matrix.png"), dpi=200)
         plt.close()
 
         holdout_pred_data = {

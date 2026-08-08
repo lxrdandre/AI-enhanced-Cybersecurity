@@ -12,6 +12,7 @@ import urllib.error
 import urllib.request
 from collections import Counter
 from html import escape
+from pathlib import Path
 
 from app.triage import TriageService, canon_label
 from clawdbot.actuator import Actuator, _is_whitelisted
@@ -23,7 +24,8 @@ from clawdbot.threat_intel import ThreatIntel
 
 log = logging.getLogger(__name__)
 
-DEFAULT_LOG_DIR = "/data/ton-iot-project/fresh_start/logs"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_LOG_DIR = str(PROJECT_ROOT / "logs")
 
 
 class EventLogger:
@@ -58,8 +60,6 @@ class EventLogger:
                 "label": prediction.get("predicted_label"),
                 "confidence": prediction.get("confidence"),
                 "probabilities": prediction.get("probabilities"),
-                "route": prediction.get("route"),
-                "router_confidence": prediction.get("router_confidence"),
             },
             "triage": {
                 "label": triage.get("label"),
@@ -142,6 +142,8 @@ DEFAULT_MGMT_PORTS = frozenset({22, 64295, 5000, 8000})
 AUTH_PORTS = frozenset({21, 22, 23, 25, 110, 143, 389, 445, 3389, 5900, 3306, 5432})
 SCAN_MIN_UNIQUE_PORTS = 10
 SCAN_MIN_UNIQUE_HOSTS = 5
+CLIENT_PORT_MIN = 32768
+COMMON_CLIENT_SERVICE_PORTS = frozenset({53, 80, 123, 443, 853, 993, 995, 5223, 8443})
 DDOS_MIN_FLOWS_PER_TARGET = 50
 DDOS_MIN_UNIQUE_SOURCES = 5
 LLM_DOUBLE_CHECK_DELAY_SECONDS = 60
@@ -323,6 +325,8 @@ def _scan_sources(detections: list[dict]) -> set[str]:
         src = _flow_field(det, "src_ip")
         if not src:
             continue
+        if _is_common_client_service_flow(det):
+            continue
         stats = by_src.setdefault(src, {"ports": set(), "hosts": set()})
         dst_port = _port_int(_flow_field(det, "dst_port"))
         dst_ip = _flow_field(det, "dst_ip")
@@ -335,6 +339,17 @@ def _scan_sources(detections: list[dict]) -> set[str]:
         if len(stats["ports"]) >= SCAN_MIN_UNIQUE_PORTS
         or len(stats["hosts"]) >= SCAN_MIN_UNIQUE_HOSTS
     }
+
+
+def _is_common_client_service_flow(det: dict) -> bool:
+    """Return whether a flow looks like ordinary client web/DNS/NTP traffic."""
+    src_port = _port_int(_flow_field(det, "src_port"))
+    dst_port = _port_int(_flow_field(det, "dst_port"))
+    return (
+        src_port is not None
+        and src_port >= CLIENT_PORT_MIN
+        and dst_port in COMMON_CLIENT_SERVICE_PORTS
+    )
 
 
 def _promote_scan(det: dict) -> None:
@@ -790,7 +805,7 @@ def run(
         )
     incident_triage = TriageService(
         api_key=_env("GEMINI_API_KEY"),
-        model=_env("TON_IOT_TRIAGE_MODEL", "gemini-2.0-flash"),
+        model=_env("TON_IOT_TRIAGE_MODEL", "gemini-3.5-flash"),
         timeout_seconds=int(_env("TON_IOT_TRIAGE_TIMEOUT_SECONDS", "30")),
         ollama_base_url=_env("OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
         ollama_model_tier1=_env("OLLAMA_MODEL_TIER1", "clawdbot-triage"),
@@ -1092,7 +1107,7 @@ def main() -> None:
         virustotal_key=_env("VIRUSTOTAL_API_KEY"),
         otx_key=_env("OTX_API_KEY"),
         threat_intel_api_ttl=int(_env("CLAWDBOT_THREAT_INTEL_TTL", "86400")),
-        protected_ips=_env("CLAWDBOT_PROTECTED_IPS", "100.111.77.70"),
+        protected_ips=_env("CLAWDBOT_PROTECTED_IPS", ""),
         protected_ips_file=_env("CLAWDBOT_PROTECTED_IPS_FILE"),
         firewall_queue=_env("CLAWDBOT_FIREWALL_QUEUE"),
         llm_double_check_delay=int(_env("CLAWDBOT_LLM_DOUBLE_CHECK_DELAY_SECONDS", str(LLM_DOUBLE_CHECK_DELAY_SECONDS))),

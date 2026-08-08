@@ -18,14 +18,15 @@ class TestSettings:
         monkeypatch.delenv("TON_IOT_TRIAGE_BACKEND", raising=False)
         monkeypatch.delenv("TON_IOT_BACKGROUND_TRIAGE", raising=False)
         settings = Settings.from_env()
-        assert settings.artifact_dir.endswith(os.path.join("artifacts", "resnet_cic_public"))
-        assert settings.base_artifact_dir.endswith(os.path.join("artifacts", "resnet_cic_public"))
-        assert settings.model_filename == "resnet_model.keras"
-        assert settings.base_model_filename == "resnet_model.keras"
+        assert settings.artifact_dir.endswith(os.path.join("artifacts", "se_dwnet_edge_iiotset_random_holdout"))
+        assert settings.base_artifact_dir.endswith(os.path.join("artifacts", "se_dwnet_edge_iiotset_random_holdout"))
+        assert settings.model_filename == "se_dwnet_model.keras"
+        assert settings.base_model_filename == "se_dwnet_model.keras"
         assert settings.pipeline_filename == "preprocessing_pipeline.pkl"
         assert settings.features_filename == "final_features.txt"
         assert settings.host == "0.0.0.0"
         assert settings.port == 8000
+        assert settings.triage_model == "gemini-3.5-flash"
         assert settings.triage_timeout_seconds == 30
         assert settings.ollama_base_url == "http://127.0.0.1:11434"
         assert settings.ollama_model_tier1 == "clawdbot-triage"

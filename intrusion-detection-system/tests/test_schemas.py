@@ -68,7 +68,7 @@ class TestPredictRequest:
 
     def test_too_many_keys_rejected(self):
         """Verify that too many keys rejected."""
-        big_record = {f"col_{i}": i for i in range(600)}
+        big_record = {f"col_{i}": i for i in range(1100)}
         with pytest.raises(ValidationError):
             PredictRequest(records=[big_record])
 

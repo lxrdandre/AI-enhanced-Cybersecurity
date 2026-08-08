@@ -7,7 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
-  <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}?v=20260422-1">
+  <script src="{{ url_for('static', filename='dashboard_theme.js') }}?v=20260701"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}?v=20260701-theme2">
 </head>
 <body data-refresh="{{ refresh_seconds }}">
   <div class="shell">
@@ -16,7 +17,7 @@
     <main>
       <header class="hero">
         <div>
-          <p class="eyebrow">Live SOC telemetry</p>
+          <p class="eyebrow">Network threat telemetry</p>
           <h1>Network Threat Operations</h1>
           <p class="subhead">Flow analytics, attack triage, model routing, and response telemetry in one view.</p>
         </div>
@@ -84,7 +85,7 @@
         </div>
         <div class="ai-pulse-layout">
           <div class="ai-core-stage">
-            <div class="ai-core dead" id="pulseOrb" aria-hidden="true">
+            <div class="ai-core dead" id="pulseOrb" role="img" aria-label="AI core status">
               <span class="core-ring ring-a"></span>
               <span class="core-ring ring-b"></span>
               <span class="core-ring ring-c"></span>
@@ -95,9 +96,9 @@
           <div class="pulse-console">
             <div class="console-title">
               <span id="pulseHeadline">Neural core initializing</span>
-              <strong id="pulseMode">BOOT SEQUENCE</strong>
+              <strong id="pulseMode">STANDBY</strong>
             </div>
-            <p id="pulseDetail">Waiting for dashboard telemetry.</p>
+            <p id="pulseDetail">Waiting for live flow telemetry.</p>
             <div class="pulse-readouts">
               <article>
                 <span>Last Analysis</span>
@@ -172,7 +173,7 @@
           <div class="panel-head">
             <div>
               <span class="eyebrow">Exposure</span>
-              <h2>Target Ports</h2>
+              <h2>Target Services</h2>
             </div>
           </div>
           <div id="portsList" class="rank-list"></div>
@@ -184,7 +185,7 @@
           <div class="panel-head">
             <div>
               <span class="eyebrow">Sources</span>
-              <h2>Top Originators</h2>
+              <h2>Top Sources</h2>
             </div>
             <a class="ghost-button" href="{{ url_for('ip_intel') }}">Open IP Intel</a>
           </div>
@@ -243,7 +244,7 @@
                 <th>Route</th>
                 <th>Confidence</th>
                 <th>Source</th>
-                <th>Destination</th>
+                <th>Target</th>
                 <th>Port</th>
                 <th>Summary</th>
                 <th>Details</th>
@@ -273,6 +274,6 @@
   <div id="telegramToastStack" class="toast-stack" aria-live="polite" aria-atomic="false"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
-  <script src="{{ url_for('static', filename='dashboard.js') }}?v=20260418-3"></script>
+  <script src="{{ url_for('static', filename='dashboard.js') }}?v=20260701-theme2"></script>
 </body>
 </html>

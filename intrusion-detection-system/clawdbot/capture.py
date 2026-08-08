@@ -12,6 +12,7 @@ import logging
 import math
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass, field
 
 log = logging.getLogger(__name__)
@@ -172,6 +173,39 @@ def _mean_or_zero(total: float, count: int) -> float:
     return float(total) / float(count) if count > 0 else 0.0
 
 
+def _http_uri_depth(uri: str) -> int:
+    """Return a compact URI path depth."""
+    path = str(uri or "").split("?", 1)[0]
+    return len([part for part in path.split("/") if part])
+
+
+def _contains_any(text: str, needles: tuple[str, ...]) -> int:
+    """Return 1 when any marker is present in text."""
+    lowered = str(text or "").lower()
+    return int(any(marker in lowered for marker in needles))
+
+
+def _zeek_history(stats: "FlowStats") -> str:
+    """Approximate Zeek history flags from Scapy-observed flow state."""
+    flags = []
+    if stats.syn_flag_count:
+        flags.append("s")
+    if stats.ack_flag_count:
+        flags.append("a")
+    if stats.rst_flag_count:
+        flags.append("r")
+    if stats.fin_flag_count:
+        flags.append("f")
+    if stats.tcp_payload_bytes > 0 or stats.http_request_body_len > 0 or stats.http_response_body_len > 0:
+        flags.append("d")
+    return "".join(flags) or "-"
+
+
+def _zeek_state(conn_state: str) -> str:
+    """Normalize connection state for context feature counters."""
+    return str(conn_state or "-").strip().lower()
+
+
 @dataclass(frozen=True)
 class FlowKey:
     """Identify a bidirectional network flow."""
@@ -217,6 +251,8 @@ class FlowStats:
     dns_rcode: str = "-"
     dns_AA: int = 0
     http_method: str = "-"
+    http_host: str = "-"
+    http_uri: str = "-"
     http_user_agent: str = "-"
     http_referrer: str = "-"
     http_version: str = "-"
@@ -224,12 +260,19 @@ class FlowStats:
     http_response_body_len: int = 0
     http_status_code: int = 0
     http_trans_depth: int = 0
+    http_file_data: str = ""
     init_win_bytes_forward: int = 0
     init_win_bytes_backward: int = 0
     _init_win_forward_set: bool = False
     _init_win_backward_set: bool = False
     act_data_pkt_fwd: int = 0
     min_seg_size_forward: int = 0
+    tcp_ack: int = 0
+    tcp_seq: int = 0
+    tcp_payload_bytes: int = 0
+    tcp_flags_numeric: int = 0
+    udp_time_delta: float = 0.0
+    last_udp_ts: float = 0.0
     _min_seg_size_forward_set: bool = False
     last_packet_ts: float = 0.0
     last_src_ts: float = 0.0
@@ -302,9 +345,12 @@ class FlowTable:
 
         src_port = dst_port = 0
         tcp_flags = ""
+        tcp_flags_numeric = 0
         transport_header_len = 0
         payload_len = 0
         tcp_window = 0
+        tcp_ack = 0
+        tcp_seq = 0
 
         if pkt.haslayer(TCP):
             proto = "tcp"
@@ -312,6 +358,9 @@ class FlowTable:
             src_port = _safe_int(getattr(tcp, "sport", 0))
             dst_port = _safe_int(getattr(tcp, "dport", 0))
             tcp_flags = _safe_flag_string(tcp)
+            tcp_flags_numeric = _safe_int(getattr(tcp, "flags", 0))
+            tcp_ack = _safe_int(getattr(tcp, "ack", 0))
+            tcp_seq = _safe_int(getattr(tcp, "seq", 0))
             transport_header_len = (_safe_int(getattr(tcp, "dataofs", None), 5) or 5) * 4
             tcp_window = max(_safe_int(getattr(tcp, "window", 0)), 0)
         elif pkt.haslayer(UDP):
@@ -343,6 +392,15 @@ class FlowTable:
                 self._flows[key] = flow
 
             flow.update_activity(now)
+            if proto == "tcp":
+                flow.tcp_ack = tcp_ack
+                flow.tcp_seq = tcp_seq
+                flow.tcp_flags_numeric = tcp_flags_numeric
+                flow.tcp_payload_bytes += payload_len
+            elif proto == "udp":
+                if flow.last_udp_ts > 0.0:
+                    flow.udp_time_delta = now - flow.last_udp_ts
+                flow.last_udp_ts = now
 
             if reverse:
                 flow.dst_bytes += packet_len
@@ -422,6 +480,8 @@ class FlowTable:
                 request = pkt[HTTPRequest]
                 flow.http_trans_depth += 1
                 flow.http_method = _safe_decode(getattr(request, "Method", "")) or "-"
+                flow.http_host = _safe_decode(getattr(request, "Host", "")) or "-"
+                flow.http_uri = _safe_decode(getattr(request, "Path", "")) or "-"
                 flow.http_user_agent = _safe_decode(getattr(request, "User_Agent", "")) or "-"
                 flow.http_referrer = _safe_decode(getattr(request, "Referer", "")) or "-"
                 flow.http_version = _safe_decode(getattr(request, "Http_Version", "")) or "-"
@@ -459,33 +519,134 @@ class FlowTable:
                     stats.dst_pkts,
                 )
 
+            history = _zeek_history(stats)
+            http_uri = stats.http_uri if stats.http_uri not in {"", "-"} else ""
+            http_count = stats.http_trans_depth if stats.http_trans_depth > 0 else int(stats.http_status_code > 0)
+            dns_count = int(stats.dns_query not in {"", "-"})
+            ssh_count = int(service == "ssh")
+            ssl_count = int(service == "ssl")
+            files_count = int(bool(stats.http_file_data))
+            http_content_length = stats.http_request_body_len + stats.http_response_body_len
+            http_status_text = str(stats.http_status_code) if stats.http_status_code else "-"
+            orig_to_resp_bytes_ratio = (
+                float(stats.src_bytes) / float(stats.dst_bytes) if stats.dst_bytes > 0 else float(stats.src_bytes)
+            )
+
             record = {
+                "ts": round(stats.first_seen or time.time(), 6),
                 "src_port": key.src_port,
                 "dst_port": key.dst_port,
+                "id_orig_p": key.src_port,
+                "id_resp_p": key.dst_port,
                 "proto": key.proto,
                 "service": service,
                 "duration": round(duration, 6),
                 "src_bytes": stats.src_bytes,
                 "dst_bytes": stats.dst_bytes,
+                "orig_bytes": stats.src_bytes,
+                "resp_bytes": stats.dst_bytes,
                 "conn_state": conn_state,
+                "history": history,
                 "missed_bytes": 0,
                 "src_pkts": stats.src_pkts,
                 "src_ip_bytes": stats.src_ip_bytes,
                 "dst_pkts": stats.dst_pkts,
                 "dst_ip_bytes": stats.dst_ip_bytes,
+                "orig_pkts": stats.src_pkts,
+                "orig_ip_bytes": stats.src_ip_bytes,
+                "resp_pkts": stats.dst_pkts,
+                "resp_ip_bytes": stats.dst_ip_bytes,
+                "flow_total_bytes": total_bytes,
+                "flow_total_pkts": total_pkts,
+                "orig_to_resp_bytes_ratio": orig_to_resp_bytes_ratio,
                 "dns_query": stats.dns_query,
+                "dns_count": dns_count,
                 "dns_qclass": stats.dns_qclass,
                 "dns_qtype": stats.dns_qtype,
                 "dns_rcode": stats.dns_rcode,
                 "dns_AA": stats.dns_AA,
+                "dns_qry_name": stats.dns_query,
+                "dns_qry_name_len": len(stats.dns_query) if stats.dns_query not in {"", "-"} else 0,
+                "dns_qry_qu": stats.dns_qclass,
+                "dns_qry_type": stats.dns_qtype,
+                "dns_retransmission": 0,
+                "dns_retransmit_request": 0,
+                "dns_retransmit_request_in": 0,
                 "http_trans_depth": stats.http_trans_depth,
+                "http_count": http_count,
                 "http_method": stats.http_method,
+                "http_host": stats.http_host,
+                "http_uri": http_uri,
+                "http_uri_len": len(http_uri),
+                "http_uri_depth": _http_uri_depth(http_uri),
+                "http_uri_has_query": int("?" in http_uri),
+                "http_uri_has_sql": _contains_any(http_uri, ("select", "union", "sleep", " or ", "%27", "'")),
+                "http_uri_has_xss": _contains_any(http_uri, ("<script", "%3cscript", "alert(", "onerror")),
+                "http_uri_has_traversal": _contains_any(http_uri, ("../", "..%2f", "%2e%2e")),
+                "http_uri_has_cmd": _contains_any(http_uri, (";id", "|id", "cmd=", "exec", "bash", "wget", "curl")),
+                "http_uri_has_upload": _contains_any(http_uri, ("upload", "filename=", "multipart")),
                 "http_referrer": stats.http_referrer,
+                "http_referer": stats.http_referrer,
                 "http_version": stats.http_version,
                 "http_request_body_len": stats.http_request_body_len,
                 "http_response_body_len": stats.http_response_body_len,
                 "http_status_code": stats.http_status_code,
+                "http_content_length": http_content_length,
+                "http_file_data": stats.http_file_data,
+                "http_request_method": stats.http_method,
+                "http_request_full_uri": http_uri,
+                "http_request_uri": http_uri,
+                "http_request_uri_query": http_uri.split("?", 1)[1] if "?" in http_uri else "",
+                "http_request_version": stats.http_version,
+                "http_response": http_status_text,
+                "http_resp_mime_types": "-",
+                "http_tls_port": key.dst_port if key.dst_port in {443, 8443} or key.src_port in {443, 8443} else 0,
                 "http_user_agent": stats.http_user_agent,
+                "http_user_agent_len": len(stats.http_user_agent) if stats.http_user_agent not in {"", "-"} else 0,
+                "files_count": files_count,
+                "notice_count": 0,
+                "weird_count": 0,
+                "ssl_count": ssl_count,
+                "ssh_count": ssh_count,
+                "arp_hw_size": 0,
+                "arp_opcode": 0,
+                "icmp_checksum": 0,
+                "icmp_seq_le": 0,
+                "icmp_transmit_timestamp": 0,
+                "icmp_unused": 0,
+                "mbtcp_len": 0,
+                "mbtcp_trans_id": 0,
+                "mbtcp_unit_id": 0,
+                "mqtt_conack_flags": 0,
+                "mqtt_conflag_cleansess": 0,
+                "mqtt_conflags": 0,
+                "mqtt_hdrflags": 0,
+                "mqtt_len": 0,
+                "mqtt_msg": "",
+                "mqtt_msg_decoded_as": "",
+                "mqtt_msgtype": 0,
+                "mqtt_proto_len": 0,
+                "mqtt_protoname": "",
+                "mqtt_topic": "",
+                "mqtt_topic_len": 0,
+                "mqtt_ver": 0,
+                "tcp_ack": stats.tcp_ack,
+                "tcp_ack_raw": stats.tcp_ack,
+                "tcp_checksum": 0,
+                "tcp_connection_fin": int(stats.fin_seen),
+                "tcp_connection_rst": int(stats.rst_seen),
+                "tcp_connection_syn": int(stats.syn_seen),
+                "tcp_connection_synack": int(stats.syn_ack_seen),
+                "tcp_dstport": key.dst_port if key.proto == "tcp" else 0,
+                "tcp_flags": stats.tcp_flags_numeric,
+                "tcp_flags_ack": int(stats.ack_flag_count > 0),
+                "tcp_len": stats.tcp_payload_bytes,
+                "tcp_options": "",
+                "tcp_payload": stats.tcp_payload_bytes,
+                "tcp_seq": stats.tcp_seq,
+                "tcp_srcport": key.src_port if key.proto == "tcp" else 0,
+                "udp_port": key.dst_port if key.proto == "udp" else 0,
+                "udp_time_delta": stats.udp_time_delta,
                 "flow_bytes_s": _rate(total_bytes, duration),
                 "flow_byts_s": _rate(total_bytes, duration),
                 "flow_pkts_s": _rate(total_pkts, duration),
@@ -606,6 +767,7 @@ class FlowTable:
             }
             records.append(record)
 
+        _add_live_context_features(records)
         return records
 
     @property
@@ -613,6 +775,136 @@ class FlowTable:
         """Return the number of currently tracked flow aggregates."""
         with self._lock:
             return len(self._flows)
+
+
+_CONTEXT_NUMERIC_SUM_COLS = (
+    "duration",
+    "orig_bytes",
+    "resp_bytes",
+    "flow_total_bytes",
+    "flow_total_pkts",
+    "orig_pkts",
+    "resp_pkts",
+    "missed_bytes",
+    "http_count",
+    "dns_count",
+    "ssh_count",
+    "ssl_count",
+    "files_count",
+    "notice_count",
+    "weird_count",
+    "http_uri_has_query",
+    "http_uri_has_sql",
+    "http_uri_has_xss",
+    "http_uri_has_traversal",
+    "http_uri_has_cmd",
+    "http_uri_has_upload",
+)
+_CONTEXT_PROTO_VALUES = ("tcp", "udp", "icmp")
+_CONTEXT_SERVICE_VALUES = ("http", "dns", "ssh", "ssl", "ftp")
+_CONTEXT_STATE_VALUES = ("s0", "sf", "rej", "rstos0", "rstr", "rsto", "sh", "shr", "oth")
+_CONTEXT_METHOD_VALUES = ("get", "post", "put", "head", "options")
+_CONTEXT_STATUS_VALUES = ("200", "301", "302", "400", "401", "403", "404", "500")
+_CONTEXT_PORTS = (20, 21, 22, 23, 53, 80, 123, 443, 502, 1883, 2000, 2323, 3306, 5432, 6379, 8000, 8080, 8443, 44818, 64295)
+_CONTEXT_WINDOWS = (5.0, 15.0, 60.0)
+
+
+def _context_window_name(seconds: float) -> str:
+    """Match the Zeek dataset builder's context-window feature names."""
+    text = f"{seconds:g}".replace(".", "p")
+    return f"{text}s"
+
+
+def _num(record: dict, key: str) -> float:
+    """Read a numeric record field."""
+    try:
+        return float(record.get(key, 0) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _text(record: dict, key: str) -> str:
+    """Read a normalized text record field."""
+    return str(record.get(key, "") or "").strip().lower()
+
+
+def _context_values(record: dict) -> dict[str, float]:
+    """Build the per-row basis values used by rolling context features."""
+    values = {"_one": 1.0}
+    for col in _CONTEXT_NUMERIC_SUM_COLS:
+        values[col] = _num(record, col)
+
+    proto = _text(record, "proto")
+    service = _text(record, "service")
+    state = _zeek_state(str(record.get("conn_state", "")))
+    method = _text(record, "http_method")
+    status = str(record.get("http_status_code") or record.get("http_response") or "").strip().lower()
+    history = _text(record, "history")
+    resp_port = int(_num(record, "id_resp_p"))
+    orig_port = int(_num(record, "id_orig_p"))
+
+    for value in _CONTEXT_PROTO_VALUES:
+        values[f"proto_{value}"] = float(proto == value)
+    for value in _CONTEXT_SERVICE_VALUES:
+        values[f"service_{value}"] = float(service == value)
+    for value in _CONTEXT_STATE_VALUES:
+        values[f"state_{value}"] = float(state == value)
+    for value in _CONTEXT_METHOD_VALUES:
+        values[f"method_{value}"] = float(method == value)
+    for value in _CONTEXT_STATUS_VALUES:
+        values[f"status_{value}"] = float(status == value)
+
+    values["history_syn"] = float("s" in history)
+    values["history_ack"] = float("a" in history)
+    values["history_rst"] = float("r" in history)
+    values["history_data"] = float("d" in history)
+    values["resp_low_port"] = float(0 < resp_port < 1024)
+    values["resp_high_port"] = float(resp_port >= 1024)
+    values["orig_high_port"] = float(orig_port >= 1024)
+    for port in _CONTEXT_PORTS:
+        values[f"resp_port_{port}"] = float(resp_port == port)
+    return values
+
+
+def _add_live_context_features(records: list[dict]) -> None:
+    """Add causal Zeek-style rolling context features to harvested live flows."""
+    if not records:
+        return
+
+    ordered = sorted(enumerate(records), key=lambda item: _num(item[1], "ts"))
+    row_values = {idx: _context_values(record) for idx, record in ordered}
+    basis_keys = list(next(iter(row_values.values())).keys())
+
+    for seconds in _CONTEXT_WINDOWS:
+        prefix = f"ctx_{_context_window_name(seconds)}"
+        sums = {key: 0.0 for key in basis_keys}
+        active: deque[tuple[float, dict[str, float]]] = deque()
+
+        for idx, record in ordered:
+            ts_value = _num(record, "ts")
+            values = row_values[idx]
+            active.append((ts_value, values))
+            for key, value in values.items():
+                sums[key] += value
+
+            min_ts = ts_value - seconds
+            while active and active[0][0] < min_ts:
+                _, expired = active.popleft()
+                for key, value in expired.items():
+                    sums[key] -= value
+
+            flow_count = sums["_one"]
+            record[f"{prefix}_flow_count"] = flow_count
+            record[f"{prefix}_flow_rate"] = flow_count / seconds
+            for col in _CONTEXT_NUMERIC_SUM_COLS:
+                value = sums[col]
+                record[f"{prefix}_{col}_sum"] = value
+                if col in {"flow_total_bytes", "flow_total_pkts"}:
+                    record[f"{prefix}_{col}_rate"] = value / seconds
+            for key in basis_keys:
+                if key == "_one" or key in _CONTEXT_NUMERIC_SUM_COLS:
+                    continue
+                record[f"{prefix}_{key}_count"] = sums[key]
 
 
 class TrafficCapture:

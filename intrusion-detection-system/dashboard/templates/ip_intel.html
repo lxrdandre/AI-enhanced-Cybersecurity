@@ -3,11 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>IP Intelligence | Threat Intelligence</title>
+  <title>Originator IP Intelligence | IoT VLAN IPS</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
-  <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}?v=20260422-1">
+  <script src="{{ url_for('static', filename='dashboard_theme.js') }}?v=20260701"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}?v=20260701-theme2">
 </head>
 <body>
   <div class="shell">
@@ -16,9 +17,9 @@
     <main class="intel-page">
       <header class="hero">
         <div>
-          <p class="eyebrow">Threat intelligence cache</p>
+          <p class="eyebrow">Originator intelligence cache</p>
           <h1>IP Intelligence</h1>
-          <p class="subhead">Observed attacker history, reputation scores, MITRE cache status, and local detection labels.</p>
+          <p class="subhead">Track non-protected originators that interact with IoT devices, including reputation scores, MITRE cache status, and local detection labels.</p>
         </div>
         <div class="status-card intel-status">
           <span class="status-dot {% if intel.db_exists and not intel.error %}online{% endif %}"></span>
@@ -27,7 +28,7 @@
             <strong>{% if intel.error %}attention{% elif intel.db_exists %}online{% else %}missing{% endif %}</strong>
           </div>
           <div>
-            <small>Tracked IPs</small>
+            <small>Originators</small>
             <strong>{{ intel.total_ips }}</strong>
           </div>
           <div>
@@ -50,19 +51,19 @@
       {% elif not intel.db_exists %}
         <section class="panel intel-empty">
           <span class="eyebrow">Cache not created yet</span>
-          <h2>No threat intelligence database was found.</h2>
-          <p class="muted">ClawdBot creates the cache after the agent starts and records threat intelligence activity.</p>
+          <h2>No originator intelligence database was found.</h2>
+          <p class="muted">ClawdBot creates the cache after the agent starts and records IoT VLAN activity.</p>
           <p class="muted">Expected database path: {{ intel.db_path }}</p>
         </section>
       {% else %}
         <section class="kpi-grid intel-kpis">
           <article class="kpi">
-            <span>Known-bad IPs</span>
+            <span>Known-bad Originators</span>
             <strong>{{ intel.known_bad }}</strong>
             <small>High local severity or external reputation</small>
           </article>
           <article class="kpi">
-            <span>Suspicious IPs</span>
+            <span>Suspicious Originators</span>
             <strong>{{ intel.suspicious }}</strong>
             <small>Moderate local or external signal</small>
           </article>
@@ -117,7 +118,7 @@
           <div class="panel-head">
             <div>
               <span class="eyebrow">All tracked IPs</span>
-              <h2>Threat Intelligence Records</h2>
+              <h2>Originator Intelligence Records</h2>
             </div>
             <span class="pill">{{ intel.total_ips }} IPs</span>
           </div>

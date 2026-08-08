@@ -9,51 +9,30 @@ from app.preprocessing import transform_with_pipeline
 
 
 class InferenceService:
-    """Run IDS inference across the base model, transfer model, and router."""
-    ROUTE_FIELDS = ("domain", "_domain", "source_domain", "_source", "source")
-    CUSTOM_ROUTE_VALUES = {"custom", "tpot", "honeypot", "transfer", "custom_like", "custom-like"}
-    ORIGINAL_ROUTE_VALUES = {"original", "base", "toniot", "ton_iot", "ton-iot", "holdout", "network"}
+    """Run IDS inference for the single classifier selected by artifact path."""
 
     def __init__(
         self,
         *,
         model,
-        original_model=None,
-        original_pipeline: dict | None = None,
-        original_final_features: list[str] | None = None,
         pipeline: dict,
         final_features: list[str],
         artifact_dir: str,
         calibration: dict | None = None,
-        domain_router: dict | None = None,
         unknown_confidence_threshold: float = 0.45,
     ):
         """Store loaded model artifacts and derive supported class metadata."""
         self.model = model
-        self.original_model = original_model
-        self.original_pipeline = original_pipeline
-        self.original_final_features = original_final_features or final_features
         self.pipeline = pipeline
         self.final_features = final_features
         self.artifact_dir = artifact_dir
-        self.domain_router = domain_router
         self.temperature = calibration["temperature"] if calibration else 1.0
         target_encoder = pipeline.get("target_encoder")
         if target_encoder is None:
             raise RuntimeError("Pipeline does not include 'target_encoder'.")
         self.class_names = [self._canon_class(name) for name in target_encoder.classes_.tolist()]
-        self.original_class_names = self.class_names
-        if self.original_model is not None and self.original_pipeline is not None:
-            original_encoder = self.original_pipeline.get("target_encoder")
-            if original_encoder is None:
-                raise RuntimeError("Original/base pipeline does not include 'target_encoder'.")
-            self.original_class_names = [self._canon_class(name) for name in original_encoder.classes_.tolist()]
-            if set(self.original_class_names) != set(self.class_names):
-                raise RuntimeError(
-                    "Original/base model classes do not match custom model classes: "
-                    f"base={self.original_class_names}, custom={self.class_names}"
-                )
         self.model_name = os.path.basename(artifact_dir)
+        self.model_family = self._infer_model_family()
         valid_cat_cols = [str(col) for col in pipeline.get("valid_cat_cols", [])]
         num_cols = [str(col) for col in pipeline.get("num_cols", [])]
         self.available_fields = set(valid_cat_cols + num_cols + self.final_features)
@@ -87,24 +66,7 @@ class InferenceService:
         """Run inference and return normalized prediction dictionaries."""
         self.validate_records(records)
         x = transform_with_pipeline(records, pipeline=self.pipeline, final_features=self.final_features)
-        original_x = None
-        if self.original_model is not None and self.original_pipeline is not None:
-            original_x = transform_with_pipeline(
-                records,
-                pipeline=self.original_pipeline,
-                final_features=self.original_final_features,
-            )
-        original_probs, custom_probs = self._predict_experts(x, original_x)
-        if custom_probs is None:
-            probabilities = original_probs
-            routes = ["single"] * len(records)
-            route_scores = [None] * len(records)
-        else:
-            routes, route_scores = self._routes(records, x)
-            probabilities = np.vstack([
-                custom_probs[idx] if route == "custom" else original_probs[idx]
-                for idx, route in enumerate(routes)
-            ])
+        probabilities = self._single_output(self.model.predict(x, verbose=0))
 
         if self.temperature != 1.0:
             log_probs = np.log(np.clip(probabilities, 1e-7, 1.0))
@@ -114,7 +76,7 @@ class InferenceService:
         pred_indices = np.argmax(probabilities, axis=1)
 
         results = []
-        for idx, prob_vector, route, route_score in zip(pred_indices, probabilities, routes, route_scores):
+        for idx, prob_vector in zip(pred_indices, probabilities):
             idx_int = int(idx)
             max_confidence = float(prob_vector[idx_int])
             prob_map = {label: float(prob) for label, prob in zip(self.class_names, prob_vector)}
@@ -130,75 +92,20 @@ class InferenceService:
                     "predicted_label": predicted_label,
                     "confidence": max_confidence,
                     "probabilities": prob_map,
-                    "route": route,
-                    "router_confidence": route_score,
                 }
             )
         return results
 
-    def _predict_experts(self, x: np.ndarray, original_x: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray | None]:
-        """Run expert models selected by the domain router."""
-        if self.original_model is not None:
-            original_input = original_x if original_x is not None else x
-            original = np.asarray(self.original_model.predict(original_input, verbose=0))
-            original = self._align_probabilities(original, self.original_class_names, self.class_names)
-            custom = self._single_output(self.model.predict(x, verbose=0))
-            return original, custom
-
-        return self._predict_heads(x)
-
-    @staticmethod
-    def _align_probabilities(
-        probabilities: np.ndarray,
-        source_classes: list[str],
-        target_classes: list[str],
-    ) -> np.ndarray:
-        """Align model probabilities to the public service class order."""
-        if source_classes == target_classes:
-            return probabilities
-        if set(source_classes) != set(target_classes):
-            raise RuntimeError(
-                f"Cannot align probabilities. source={source_classes}, target={target_classes}"
-            )
-        aligned = np.zeros((probabilities.shape[0], len(target_classes)), dtype=probabilities.dtype)
-        target_index = {label: idx for idx, label in enumerate(target_classes)}
-        for source_idx, label in enumerate(source_classes):
-            aligned[:, target_index[label]] = probabilities[:, source_idx]
-        return aligned
-
-    def _predict_heads(self, x: np.ndarray) -> tuple[np.ndarray, np.ndarray | None]:
-        """Run the base and transfer heads for a single-domain inference path."""
-        raw = self.model.predict(x, verbose=0)
-        if isinstance(raw, dict):
-            original = self._first_present(raw, ("original_head", "original"))
-            custom = self._first_present(raw, ("custom_head", "custom", "transfer_head"))
-            if original is not None and custom is not None:
-                return np.asarray(original), np.asarray(custom)
-            return np.asarray(next(iter(raw.values()))), None
-
-        if isinstance(raw, (list, tuple)):
-            names = list(getattr(self.model, "output_names", []))
-            by_name = dict(zip(names, raw))
-            original = self._first_present(by_name, ("original_head", "original"))
-            custom = self._first_present(by_name, ("custom_head", "custom", "transfer_head"))
-            if original is not None and custom is not None:
-                return np.asarray(original), np.asarray(custom)
-            if len(raw) >= 2:
-                return np.asarray(raw[0]), np.asarray(raw[1])
-            return np.asarray(raw[0]), None
-
-        return np.asarray(raw), None
-
     def _single_output(self, raw) -> np.ndarray:
         """Normalize Keras output variants into a probability array."""
         if isinstance(raw, dict):
-            custom = self._first_present(raw, ("custom_head", "custom", "transfer_head"))
-            return np.asarray(custom if custom is not None else next(iter(raw.values())))
+            output = self._first_present(raw, ("output", "predictions", "classifier", "custom_head", "original_head"))
+            return np.asarray(output if output is not None else next(iter(raw.values())))
         if isinstance(raw, (list, tuple)):
             names = list(getattr(self.model, "output_names", []))
             by_name = dict(zip(names, raw))
-            custom = self._first_present(by_name, ("custom_head", "custom", "transfer_head"))
-            return np.asarray(custom if custom is not None else raw[-1])
+            output = self._first_present(by_name, ("output", "predictions", "classifier", "custom_head", "original_head"))
+            return np.asarray(output if output is not None else raw[0])
         return np.asarray(raw)
 
     @staticmethod
@@ -209,55 +116,41 @@ class InferenceService:
                 return values[key]
         return None
 
-    def _routes(self, records: list[dict], x: np.ndarray) -> tuple[list[str], list[float | None]]:
-        """Return the router-selected domain labels for each record."""
-        routes: list[str | None] = [self._manual_route(record) for record in records]
-        scores: list[float | None] = [1.0 if route is not None else None for route in routes]
-        unresolved = [idx for idx, route in enumerate(routes) if route is None]
-
-        if unresolved and self.domain_router is not None:
-            router = self.domain_router.get("model", self.domain_router)
-            threshold = float(self.domain_router.get("threshold", 0.60))
-            proba = router.predict_proba(x[unresolved])
-            classes = list(getattr(router, "classes_", [0, 1]))
-            custom_idx = classes.index(1) if 1 in classes else classes.index("custom")
-            for row_idx, sample_idx in enumerate(unresolved):
-                p_custom = float(proba[row_idx, custom_idx])
-                route = "custom" if p_custom >= threshold else "original"
-                routes[sample_idx] = route
-                scores[sample_idx] = p_custom if route == "custom" else 1.0 - p_custom
-
-        return [route or "original" for route in routes], scores
-
-    def _manual_route(self, record: dict) -> str | None:
-        """Infer a deterministic route when the learned router is unavailable."""
-        for field in self.ROUTE_FIELDS:
-            value = record.get(field)
-            if value in (None, ""):
-                continue
-            normalized = str(value).strip().lower().replace(" ", "_")
-            if normalized in self.CUSTOM_ROUTE_VALUES:
-                return "custom"
-            if normalized in self.ORIGINAL_ROUTE_VALUES:
-                return "original"
-        return None
+    def _infer_model_family(self) -> str:
+        """Infer the live feature family expected by the selected artifact."""
+        features = set(self.final_features)
+        artifact_name = os.path.basename(self.artifact_dir).lower()
+        if any(feature.startswith("ctx_") for feature in features) or {"id_orig_p", "history"} <= features:
+            return "zeek_crossval"
+        if {"arp_hw_size", "mqtt_hdrflags", "tcp_flags"} & features:
+            return "edge_iiotset"
+        if {"flow_byts_s", "fwd_iat_tot", "bwd_header_len"} & features:
+            return "cic_public"
+        if {"conn_state", "dns_query", "src_ip_bytes", "dst_ip_bytes"} & features:
+            return "ton_iot"
+        if "zeek" in artifact_name:
+            return "zeek_crossval"
+        if "edge" in artifact_name:
+            return "edge_iiotset"
+        if "cic" in artifact_name:
+            return "cic_public"
+        if "ton" in artifact_name:
+            return "ton_iot"
+        return "generic"
 
     def metadata(self) -> dict:
-        """Return model, feature, routing, and class metadata."""
-        routing_enabled = bool(
-            (self.original_model is not None and self.domain_router is not None)
-            or len(getattr(self.model, "output_names", [])) > 1
-        )
+        """Return model, feature, and class metadata."""
         return {
             "model_name": self.model_name,
+            "model_family": self.model_family,
             "artifact_dir": self.artifact_dir,
             "class_names": self.class_names,
             "feature_count": self.feature_count,
-            "original_feature_count": len(self.original_final_features) if self.original_model is not None else None,
             "input_dim": self.input_dim,
             "required_fields": self.required_fields,
+            "available_fields": sorted(self.available_fields),
             "feature_signature_sha256": self.feature_signature_sha256,
             "unknown_confidence_threshold": self.unknown_confidence_threshold,
-            "routing_enabled": routing_enabled,
-            "route_fields": list(self.ROUTE_FIELDS) if routing_enabled else [],
+            "routing_enabled": False,
+            "route_fields": [],
         }

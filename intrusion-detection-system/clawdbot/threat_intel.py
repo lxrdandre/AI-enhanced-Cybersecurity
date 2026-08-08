@@ -25,12 +25,14 @@ import sqlite3
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 log = logging.getLogger(__name__)
 
 # -- Defaults -------------------------------------------------
 
-DEFAULT_DB_PATH = "/data/ton-iot-project/fresh_start/data/threat_cache.db"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_DB_PATH = str(PROJECT_ROOT / "data" / "threat_cache.db")
 API_CACHE_TTL = 86400  # 24 hours
 MITRE_STIX_URL = (
     "https://raw.githubusercontent.com/mitre/cti/master/"

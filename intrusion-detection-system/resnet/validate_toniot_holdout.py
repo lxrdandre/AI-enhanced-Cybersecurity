@@ -1,15 +1,21 @@
 """
-Validate the TON-IoT base model on a never-seen holdout CSV.
+Validate a labelled network-flow CSV with a saved SEDWNet/ResNet artifact.
 
-Expected workflow on the server:
-    python build_validation_dataset.py
-    python validate.py
+The default target is the never-seen TON-IoT holdout CSV and the default model
+artifact is the temporal unified SEDWNet, when present. The same script also
+validates the custom/TPOT CSV because both datasets use the same 7-class label
+space after cleanup.
 
-The validation CSV should contain raw TON-IoT rows, not preprocessed tensors.
-This script performs the same label cleanup as training, then applies the saved
-preprocessing_pipeline.pkl and final_features.txt from the model artifact dir.
-By default it validates artifacts/resnet_base, not the fine-tuned transfer
-model, because this holdout is sampled from the original TON-IoT distribution.
+Examples
+--------
+    # Unseen TON-IoT holdout against the temporal unified model
+    python resnet/validate_toniot_holdout.py
+
+    # Custom dataset against a unified model
+    python resnet/validate_toniot_holdout.py \
+        --csv data/custom/tpot_finetune.csv \
+        --dataset-name custom \
+        --model-dir artifacts/resnet_unified_7class_temporal
 """
 
 from __future__ import annotations
@@ -18,6 +24,7 @@ import argparse
 import glob
 import os
 import pickle
+import re
 import sys
 from collections import Counter
 
@@ -31,6 +38,7 @@ import seaborn as sns
 import tensorflow as tf
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.preprocessing import LabelEncoder
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -75,8 +83,9 @@ TARGET_CLASSES = [
 ]
 
 DROP_LABELS = {"mitm", "ransomware"}
-DROP_COLS = ["ts", "date", "time", "label"]
-IP_COLS = ["src_ip", "dst_ip", "srcip", "dstip"]
+LABEL_CANDIDATES = ("type", "attack", "category", "label", "Label")
+TIME_COLS = ("ts", "timestamp", "datetime", "date", "time")
+IP_COLS = ("src_ip", "dst_ip", "srcip", "dstip")
 
 
 def _select_probs(raw_output, head: str = "original_head") -> np.ndarray:
@@ -102,9 +111,10 @@ def _find_model_dir(project_root: str, explicit: str | None) -> str:
         return os.path.abspath(explicit)
 
     candidates = [
+        os.path.join(project_root, "artifacts", "resnet_custom"),
+        os.path.join(project_root, "artifacts", "resnet_unified_7class_temporal"),
+        os.path.join(project_root, "artifacts", "resnet_unified_7class_random"),
         os.path.join(project_root, "artifacts", "resnet_base"),
-        os.path.join(project_root, "artifacts", "resnet_transfer_7class"),
-        os.path.join(project_root, "artifacts", "resnet_transfer"),
     ]
     for path in candidates:
         model_files = glob.glob(os.path.join(path, "*.keras"))
@@ -135,8 +145,8 @@ def _load_final_features(model_dir: str, pipeline: dict) -> list[str]:
 
 def _pick_model_file(model_dir: str) -> str:
     preferred_names = [
+        "sedwnet_unified_7class.keras",
         "resnet_model.keras",
-        "resnet_transfer_model_7class.keras",
     ]
     for name in preferred_names:
         preferred = os.path.join(model_dir, name)
@@ -161,48 +171,97 @@ def _pick_pipeline_file(model_dir: str) -> str:
 
 
 def _load_label_encoder(model_dir: str, pipeline: dict) -> tuple[object, list[str]]:
-    meta_path = os.path.join(model_dir, "transfer_training_metadata.pkl")
-    if os.path.exists(meta_path):
+    for meta_name in ("training_metadata.pkl", "transfer_training_metadata.pkl"):
+        meta_path = os.path.join(model_dir, meta_name)
+        if not os.path.exists(meta_path):
+            continue
         with open(meta_path, "rb") as f:
             meta = pickle.load(f)
-        return meta["label_encoder"], [str(cls) for cls in meta["classes"]]
+        classes = [str(cls) for cls in meta.get("classes", meta.get("all_classes", []))]
+        label_encoder = meta.get("label_encoder")
+        if label_encoder is not None and classes:
+            return label_encoder, classes
+        if classes:
+            encoder = LabelEncoder()
+            encoder.fit(classes)
+            return encoder, classes
 
     pipeline_encoder = pipeline.get("target_encoder")
     if pipeline_encoder is not None and hasattr(pipeline_encoder, "classes_"):
         return pipeline_encoder, [str(cls) for cls in pipeline_encoder.classes_]
-
-    from sklearn.preprocessing import LabelEncoder
 
     encoder = LabelEncoder()
     encoder.fit(TARGET_CLASSES)
     return encoder, TARGET_CLASSES
 
 
-def _clean_validation_frame(df: pd.DataFrame, class_names: list[str]) -> tuple[pd.DataFrame, np.ndarray]:
+def _canon_label(label: object) -> str:
+    value = str(label).strip().lower()
+    return "dos_ddos" if value in {"dos", "ddos", "ddos_dos"} else value
+
+
+def _find_label_column(df: pd.DataFrame, explicit: str | None) -> str:
+    if explicit:
+        if explicit not in df.columns:
+            raise RuntimeError(f"Label column '{explicit}' not found. Columns: {list(df.columns[:40])}")
+        return explicit
+
+    for col in LABEL_CANDIDATES:
+        if col not in df.columns:
+            continue
+        values = set(df[col].dropna().astype(str).head(50_000).map(_canon_label).unique())
+        if values.intersection(TARGET_CLASSES):
+            return col
+
+    raise RuntimeError(
+        "Could not identify a label column. "
+        f"Tried {LABEL_CANDIDATES}. Columns: {list(df.columns[:40])}"
+    )
+
+
+def _safe_name(value: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "_", value.strip().lower())
+    return cleaned.strip("_") or "dataset"
+
+
+def _infer_dataset_name(csv_path: str, explicit: str | None) -> str:
+    if explicit:
+        return _safe_name(explicit)
+    stem = os.path.splitext(os.path.basename(csv_path))[0]
+    if "tpot" in stem.lower() or "custom" in csv_path.lower():
+        return "custom"
+    if "holdout" in stem.lower() or "toniot" in stem.lower():
+        return "toniot_holdout"
+    return _safe_name(stem)
+
+
+def _clean_validation_frame(
+    df: pd.DataFrame,
+    *,
+    class_names: list[str],
+    label_col: str | None,
+) -> tuple[pd.DataFrame, np.ndarray]:
     df = df.copy()
     df.columns = df.columns.str.strip()
-    df.drop(columns=DROP_COLS, errors="ignore", inplace=True)
 
-    if "type" not in df.columns:
-        raise RuntimeError("Validation CSV must contain TON-IoT target column 'type'.")
-
-    labels = df["type"].astype(str).str.strip().str.lower()
-    df = df.loc[~labels.isin(DROP_LABELS)].copy()
-    df["type"] = df["type"].astype(str).str.strip().str.lower()
-    df.loc[df["type"].isin(["dos", "ddos"]), "type"] = "dos_ddos"
+    target_col = _find_label_column(df, label_col)
+    labels = df[target_col].map(_canon_label)
+    keep = ~labels.isin(DROP_LABELS)
+    df = df.loc[keep].copy()
+    labels = labels.loc[keep].copy()
 
     if "ddos_dos" in class_names and "dos_ddos" not in class_names:
-        df.loc[df["type"] == "dos_ddos", "type"] = "ddos_dos"
+        labels = labels.replace({"dos_ddos": "ddos_dos"})
 
-    df = df[df["type"].isin(class_names)].copy()
+    keep = labels.isin(class_names)
+    df = df.loc[keep].copy()
+    labels = labels.loc[keep].to_numpy()
     if df.empty:
         raise RuntimeError(f"No validation rows remain after filtering to classes: {class_names}")
 
-    y_true = df["type"].to_numpy()
-    df.drop(columns=["type"], inplace=True)
-    df.drop(columns=IP_COLS, errors="ignore", inplace=True)
-
-    return df, y_true
+    drop_cols = set(LABEL_CANDIDATES) | set(TIME_COLS) | set(IP_COLS)
+    df.drop(columns=[col for col in drop_cols if col in df.columns], inplace=True, errors="ignore")
+    return df, labels
 
 
 def validate(
@@ -210,19 +269,21 @@ def validate(
     csv_path: str,
     model_dir: str,
     output_dir: str | None,
+    dataset_name: str,
+    label_col: str | None,
     batch_size: int,
     chunk_size: int,
     max_samples: int | None,
 ) -> None:
-    os.makedirs(model_dir, exist_ok=True)
     if output_dir is None:
-        output_dir = os.path.join(model_dir, "toniot_holdout_validation")
+        output_dir = os.path.join(model_dir, f"{dataset_name}_validation")
     os.makedirs(output_dir, exist_ok=True)
 
     model_path = _pick_model_file(model_dir)
     pipeline_path = _pick_pipeline_file(model_dir)
 
-    print("=== TON-IoT Holdout Validation ===")
+    print("=== Labelled Dataset Validation ===")
+    print(f"Dataset:    {dataset_name}")
     print(f"CSV:        {csv_path}")
     print(f"Model dir:  {model_dir}")
     print(f"Model:      {model_path}")
@@ -237,11 +298,12 @@ def validate(
     print(f"Features:   {len(final_features)} -> {final_features}")
 
     label_encoder, class_names = _load_label_encoder(model_dir, pipeline)
+    class_names = [str(cls) for cls in class_names]
     print(f"Classes:    {class_names}")
 
     print("Loading validation CSV...")
     df = pd.read_csv(csv_path, dtype=str, low_memory=False, on_bad_lines="skip")
-    df, y_true = _clean_validation_frame(df, class_names)
+    df, y_true = _clean_validation_frame(df, class_names=class_names, label_col=label_col)
 
     if max_samples and len(df) > max_samples:
         rng = np.random.default_rng(42)
@@ -269,7 +331,7 @@ def validate(
 
     probs = np.vstack(all_probs)
     pred_int = np.argmax(probs, axis=1)
-    y_pred = label_encoder.inverse_transform(pred_int)
+    y_pred = np.asarray(label_encoder.inverse_transform(pred_int)).astype(str)
     confidence = np.max(probs, axis=1)
 
     report = classification_report(
@@ -282,13 +344,13 @@ def validate(
     )
 
     print("\n" + "=" * 70)
-    print("TON-IoT NEVER-SEEN HOLDOUT VALIDATION")
+    print(f"{dataset_name.upper()} VALIDATION")
     print("=" * 70)
     print(report)
 
-    report_path = os.path.join(output_dir, "toniot_holdout_classification_report.txt")
+    report_path = os.path.join(output_dir, f"{dataset_name}_classification_report.txt")
     with open(report_path, "w") as f:
-        f.write("=== TON-IoT Never-Seen Holdout Validation ===\n")
+        f.write(f"=== {dataset_name} Validation ===\n")
         f.write(f"CSV: {csv_path}\n")
         f.write(f"Model: {model_path}\n")
         f.write(f"Pipeline: {pipeline_path}\n")
@@ -307,24 +369,25 @@ def validate(
         yticklabels=class_names,
         cmap="Blues",
     )
-    plt.title("TON-IoT Never-Seen Holdout Validation")
+    plt.title(f"{dataset_name} Validation")
     plt.xlabel("Predicted")
     plt.ylabel("True")
     plt.tight_layout()
-    cm_path = os.path.join(output_dir, "toniot_holdout_confusion_matrix.png")
+    cm_path = os.path.join(output_dir, f"{dataset_name}_confusion_matrix.png")
     plt.savefig(cm_path, dpi=200)
     plt.close()
     print(f"Confusion matrix saved: {cm_path}")
 
-    pred_path = os.path.join(output_dir, "toniot_holdout_predictions.csv")
-    pd.DataFrame(
-        {
-            "true_class": y_true,
-            "predicted_class": y_pred,
-            "confidence": confidence,
-            "correct": y_true == y_pred,
-        }
-    ).to_csv(pred_path, index=False)
+    pred_data = {
+        "true_class": y_true,
+        "predicted_class": y_pred,
+        "confidence": confidence,
+        "correct": y_true == y_pred,
+    }
+    for index, cls in enumerate(class_names):
+        pred_data[f"prob_{cls}"] = probs[:, index]
+    pred_path = os.path.join(output_dir, f"{dataset_name}_predictions.csv")
+    pd.DataFrame(pred_data).to_csv(pred_path, index=False)
     print(f"Predictions saved: {pred_path}")
 
     print(
@@ -346,29 +409,35 @@ def validate(
 
 
 def main() -> None:
-    project_root = _detect_project_root()
-    parser = argparse.ArgumentParser(description="Validate base ResNet on TON-IoT holdout data.")
+    root = _detect_project_root()
+    parser = argparse.ArgumentParser(description="Validate a labelled network-flow CSV with a saved model artifact.")
     parser.add_argument(
         "--csv",
-        default=os.path.join(project_root, "data", "toniot_holdout_validation.csv"),
-        help="Holdout validation CSV built from raw TON-IoT files.",
+        default=os.path.join(root, "data", "toniot_holdout_validation.csv"),
+        help="Labelled validation CSV. Defaults to the unseen TON-IoT holdout CSV.",
     )
     parser.add_argument(
         "--model-dir",
         default=None,
-        help="Model artifact directory. Defaults to artifacts/resnet_base.",
+        help="Model artifact directory. Defaults to artifacts/resnet_unified_7class_temporal when available.",
     )
+    parser.add_argument("--dataset-name", default=None, help="Name used in output files. Auto-derived from CSV if omitted.")
+    parser.add_argument("--label-col", default=None, help="Override target label column. Auto-detected if omitted.")
     parser.add_argument("--output-dir", default=None)
     parser.add_argument("--batch-size", type=int, default=2048)
     parser.add_argument("--chunk-size", type=int, default=50_000)
     parser.add_argument("--max-samples", type=int, default=None)
     args = parser.parse_args()
 
-    model_dir = _find_model_dir(project_root, args.model_dir)
+    csv_path = os.path.abspath(args.csv)
+    model_dir = _find_model_dir(root, args.model_dir)
+    dataset_name = _infer_dataset_name(csv_path, args.dataset_name)
     validate(
-        csv_path=args.csv,
+        csv_path=csv_path,
         model_dir=model_dir,
         output_dir=args.output_dir,
+        dataset_name=dataset_name,
+        label_col=args.label_col,
         batch_size=args.batch_size,
         chunk_size=args.chunk_size,
         max_samples=args.max_samples,

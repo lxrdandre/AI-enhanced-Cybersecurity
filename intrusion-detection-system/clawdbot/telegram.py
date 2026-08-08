@@ -141,11 +141,6 @@ class TelegramNotifier:
         lines.append("<b>Detection context</b>")
         lines.append(f"  Classifier label: {_escape(str(predicted_label))}")
         lines.append(f"  Confidence: {float(confidence or 0.0):.3f}")
-        if prediction.get("route"):
-            route = str(prediction.get("route"))
-            if prediction.get("router_confidence") is not None:
-                route += f" ({float(prediction.get('router_confidence') or 0.0):.3f})"
-            lines.append(f"  Model route: {_escape(route)}")
         confidence_note = triage.get("confidence_note")
         if confidence_note:
             lines.append(f"  Confidence note: {_escape(str(confidence_note))}")

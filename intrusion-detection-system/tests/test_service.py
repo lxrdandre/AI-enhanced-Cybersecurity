@@ -67,11 +67,10 @@ class _Router:
         return np.repeat([[0.2, 0.8]], len(x), axis=0)
 
 
-def _service(router):
+def _service():
     """Build an inference service fixture with mocked model artifacts."""
     return InferenceService(
         model=_Model([0.05, 0.95]),
-        original_model=_Model([0.95, 0.05]),
         pipeline={
             "target_encoder": _TargetEncoder(),
             "encoders": {},
@@ -82,30 +81,25 @@ def _service(router):
         },
         final_features=["f"],
         artifact_dir="/tmp/test",
-        domain_router={"model": router, "threshold": 0.6},
     )
 
 
-def test_live_domain_uses_automatic_router():
-    """Verify that live domain uses automatic router."""
-    router = _Router()
-    result = _service(router).predict([{"domain": "live", "f": 1.0}])[0]
+def test_legacy_domain_field_does_not_route():
+    """Verify that legacy route hints do not switch classifiers."""
+    result = _service().predict([{"domain": "original", "f": 1.0}])[0]
 
-    assert router.calls == 1
-    assert result["route"] == "custom"
     assert result["predicted_label"] == "xss"
-    assert result["router_confidence"] == 0.8
+    assert "route" not in result
+    assert "router_confidence" not in result
 
 
-def test_original_domain_still_forces_base_expert():
-    """Verify that original domain still forces base expert."""
-    router = _Router()
-    result = _service(router).predict([{"domain": "original", "f": 1.0}])[0]
+def test_metadata_reports_single_classifier():
+    """Verify that model metadata reports routing disabled."""
+    metadata = _service().metadata()
 
-    assert router.calls == 0
-    assert result["route"] == "original"
-    assert result["predicted_label"] == "normal"
-    assert result["router_confidence"] == 1.0
+    assert metadata["routing_enabled"] is False
+    assert metadata["route_fields"] == []
+    assert metadata["model_family"] == "generic"
 
 
 def test_resnet_base_dos_ddos_class_is_alerting_label():
@@ -131,37 +125,33 @@ def test_resnet_base_dos_ddos_class_is_alerting_label():
     assert "ddos_dos" in result["probabilities"]
 
 
-def test_routed_experts_can_use_separate_pipelines_and_class_order():
-    """Verify that routed experts can use separate pipelines and class order."""
-    router = _Router()
-    original_model = _RecordingModel([0.05, 0.95])
+def test_multi_output_model_uses_classifier_named_output():
+    """Verify that multi-output artifacts are treated as one selected classifier."""
+    class _MultiOutputModel(_Model):
+        """Represent a legacy multi-output model."""
+        output_names = ["original_head", "custom_head"]
+
+        def predict(self, x, verbose=0):
+            """Return two output heads; classifier-named output is used."""
+            return [
+                np.repeat(np.asarray([[0.90, 0.10]], dtype=np.float32), len(x), axis=0),
+                np.repeat(np.asarray([[0.05, 0.95]], dtype=np.float32), len(x), axis=0),
+            ]
+
     service = InferenceService(
-        model=_Model([0.05, 0.95]),
-        original_model=original_model,
-        original_pipeline={
-            "target_encoder": _ReversedTargetEncoder(),
-            "encoders": {},
-            "scaler_num": _IdentityScaler(),
-            "final_scaler": _IdentityScaler(),
-            "valid_cat_cols": [],
-            "num_cols": ["base_f"],
-        },
-        original_final_features=["base_f"],
+        model=_MultiOutputModel([0.05, 0.95]),
         pipeline={
             "target_encoder": _TargetEncoder(),
             "encoders": {},
             "scaler_num": _IdentityScaler(),
             "final_scaler": _IdentityScaler(),
             "valid_cat_cols": [],
-            "num_cols": ["custom_f"],
+            "num_cols": ["f"],
         },
-        final_features=["custom_f"],
+        final_features=["f"],
         artifact_dir="/tmp/test",
-        domain_router={"model": router, "threshold": 0.6},
     )
 
-    result = service.predict([{"domain": "original", "base_f": 7.0, "custom_f": 2.0}])[0]
+    result = service.predict([{"f": 2.0}])[0]
 
-    assert result["route"] == "original"
-    assert result["predicted_label"] == "normal"
-    assert original_model.last_x.tolist() == [[7.0]]
+    assert result["predicted_label"] == "xss"

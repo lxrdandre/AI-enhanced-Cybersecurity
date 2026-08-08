@@ -1,9 +1,44 @@
 .DS_Store
 **/.DS_Store
 .env
+.env.*
+!.env.example
+!**/.env.example
 .vscode/
 __pycache__/
 **/__pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
+
+# Credentials and private key material
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+
+# IDS runtime state and environment-specific network configuration
+intrusion-detection-system/logs/
+intrusion-detection-system/artifacts/*
+!intrusion-detection-system/artifacts/README.md
+intrusion-detection-system/data/*.db
+intrusion-detection-system/data/*.db-*
+intrusion-detection-system/data/*.sqlite*
+intrusion-detection-system/data/protected_ips.json
+intrusion-detection-system/data/firewall_requests.json
+intrusion-detection-system/resnet/edge_crossval_lab/config.env
+intrusion-detection-system/resnet/edge_crossval_lab/data/
+
+# Raw captures, datasets, and generated Colab experiment outputs
+intrusion-detection-system/colab/data/
+intrusion-detection-system/colab/custom_zeek_baselines_*/
+intrusion-detection-system/colab/se_dwnet_*_colab/
+intrusion-detection-system/colab/domain_transfer_*/
+intrusion-detection-system/**/*.keras
+intrusion-detection-system/**/*.pkl
+intrusion-detection-system/**/*.joblib
+*.pcap
+*.pcapng
+*.pcap.gz

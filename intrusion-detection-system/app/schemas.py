@@ -5,7 +5,7 @@ from typing import Any
 from pydantic import BaseModel, Field, field_validator
 
 MAX_RECORDS_PER_REQUEST = 2048
-MAX_RECORD_KEYS = 512
+MAX_RECORD_KEYS = 1024
 
 
 class PredictRequest(BaseModel):
@@ -45,11 +45,12 @@ class PredictRequest(BaseModel):
 
 
 class PredictionItem(BaseModel):
-    """Single model prediction with probability distribution and route metadata."""
+    """Single model prediction with probability distribution."""
     predicted_index: int
     predicted_label: str
     confidence: float
     probabilities: dict[str, float]
+    # Kept as nullable compatibility fields for older dashboard/audit logs.
     route: str | None = None
     router_confidence: float | None = None
 
@@ -64,11 +65,13 @@ class PredictResponse(BaseModel):
 class MetadataResponse(BaseModel):
     """Response body describing loaded model artifacts and input requirements."""
     model_name: str
+    model_family: str = "generic"
     artifact_dir: str
     class_names: list[str]
     feature_count: int
     input_dim: int
     required_fields: list[str]
+    available_fields: list[str] = []
     feature_signature_sha256: str
     unknown_confidence_threshold: float
     routing_enabled: bool = False

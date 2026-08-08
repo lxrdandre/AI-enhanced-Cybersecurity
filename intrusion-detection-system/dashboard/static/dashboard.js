@@ -24,7 +24,42 @@ function fmt(value) {
  */
 function possiblePhrase(value) {
   const count = Number(value || 0);
-  return `${fmt(count)} possible`;
+  return `${fmt(count)} possible correlated label${count === 1 ? "" : "s"}`;
+}
+
+/**
+ * Return a user-facing dataset name from model metadata.
+ */
+function datasetName(api = {}) {
+  const rawModel = String(api.model || "").trim();
+  const rawArtifactDir = String(api.artifact_dir || "").trim();
+  const haystack = `${rawModel} ${rawArtifactDir}`.toLowerCase();
+
+  if (!rawModel || rawModel === "unavailable") return "unavailable";
+  if (haystack.includes("edge_iiotset") || haystack.includes("edge-iiotset") || haystack.includes("edge iiotset")) {
+    return "Edge-IIoTset";
+  }
+  if (haystack.includes("ton_iot") || haystack.includes("ton-iot") || haystack.includes("toniot")) {
+    return "TON-IoT";
+  }
+  if (haystack.includes("cicids") || haystack.includes("cic_ids") || haystack.includes("cic-ids") || haystack.includes("cic_")) {
+    return "CIC-IDS2017";
+  }
+  if (haystack.includes("zeek_crossval") || haystack.includes("edge_crossval")) {
+    return "IoT Lab Zeek Flows";
+  }
+
+  const basename = (rawArtifactDir.split(/[\\/]/).filter(Boolean).pop() || rawModel)
+    .replace(/\.(keras|h5|pkl|joblib)$/i, "")
+    .replace(/^(se_dwnet|resnet|bilstm|model|ids)[_-]*/i, "")
+    .replace(/[_-]*(random|final)?[_-]*(holdout|crossval|classifier|model)$/i, "")
+    .replaceAll("_", " ")
+    .replaceAll("-", " ")
+    .trim();
+
+  return basename
+    ? basename.replace(/\b\w/g, char => char.toUpperCase())
+    : rawModel;
 }
 
 /**
@@ -49,6 +84,47 @@ function relativeAge(epoch) {
 function setText(id, value) {
   const el = document.getElementById(id);
   if (el) el.textContent = value;
+}
+
+/**
+ * Build the legacy neural-core eye if a stale template still serves another pulse visual.
+ */
+function buildAiCoreEye() {
+  const wrapper = document.createElement("div");
+  wrapper.innerHTML = `
+    <div class="ai-core dead" id="pulseOrb" role="img" aria-label="AI core status">
+      <span class="core-ring ring-a"></span>
+      <span class="core-ring ring-b"></span>
+      <span class="core-ring ring-c"></span>
+      <span class="core-eye"></span>
+      <span class="core-scan"></span>
+    </div>
+  `;
+  return wrapper.firstElementChild;
+}
+
+/**
+ * Ensure the pulse visual is the old neural-core eye.
+ */
+function ensurePulseEye() {
+  const current = document.getElementById("pulseOrb");
+  if (!current) return null;
+  if (current.classList.contains("ai-core")) return current;
+  const replacement = buildAiCoreEye();
+  current.replaceWith(replacement);
+  return replacement;
+}
+
+/**
+ * Keep stale server copy aligned with the restored command-center interface.
+ */
+function pulseCopy(value, fallback) {
+  const text = String(value || "").trim();
+  if (!text) return fallback;
+  return text
+    .replace(/IoT VLAN monitor/gi, "Neural core")
+    .replace(/IoT VLAN telemetry link/gi, "IDS telemetry link")
+    .replace(/IPS API/g, "IDS API");
 }
 
 /**
@@ -307,28 +383,38 @@ function renderRankList(id, items) {
 function renderSystemPulse(activity = {}, api = {}) {
   const validStates = new Set(["breathing", "thinking", "dead"]);
   const state = validStates.has(activity.state) ? activity.state : (api.online ? "breathing" : "dead");
+  const systemUp = Boolean(api.online);
   const mode = {
     breathing: "STANDBY ONLINE",
     thinking: "ACTIVE INFERENCE",
-    dead: "NO SIGNAL",
+    dead: "CORE OFFLINE",
+  }[state];
+  const displayLabel = {
+    breathing: "breathing",
+    thinking: "thinking",
+    dead: "dead",
   }[state];
 
-  const orb = document.getElementById("pulseOrb");
+  const pulseTitle = document.querySelector("#pulse .panel-head h2");
+  const pulseEyebrow = document.querySelector("#pulse .panel-head .eyebrow");
+  const orb = ensurePulseEye();
   const pill = document.getElementById("pulseState");
   const signals = document.getElementById("pulseSignals");
 
+  if (pulseTitle) pulseTitle.textContent = "System Pulse";
+  if (pulseEyebrow) pulseEyebrow.textContent = "Live AI core";
   if (orb) {
-    orb.classList.remove("breathing", "thinking", "dead");
-    orb.classList.add(state);
+    orb.classList.remove("breathing", "thinking", "dead", "up", "down");
+    orb.classList.add(state, systemUp ? "up" : "down");
   }
   if (pill) {
     pill.className = `pill pulse-status ${state}`;
-    pill.textContent = String(activity.label || state).toUpperCase();
+    pill.textContent = String(displayLabel || activity.label || state).toUpperCase();
   }
 
-  setText("pulseHeadline", activity.headline || (api.online ? "Neural core online" : "No signal"));
+  setText("pulseHeadline", pulseCopy(activity.headline, api.online ? "Neural core online" : "Neural core offline"));
   setText("pulseMode", mode);
-  setText("pulseDetail", activity.detail || "Waiting for dashboard telemetry.");
+  setText("pulseDetail", pulseCopy(activity.detail, "IDS API is healthy and waiting for the next flow batch."));
   setText("pulseAnalysis", relativeAge(activity.last_analysis_epoch));
   setText("pulseAttack", relativeAge(activity.last_attack_epoch));
   setText("pulseAction", relativeAge(activity.last_action_epoch));
@@ -699,10 +785,11 @@ function applyMetrics(data) {
   const apiDot = document.getElementById("apiDot");
   apiDot?.classList.toggle("online", Boolean(data.api.online));
   setText("apiStatus", data.api.status);
-  setText("modelName", data.api.model || "unavailable");
+  setText("modelName", datasetName(data.api));
   setText("routingStatus", data.api.routing_enabled ? "auto" : "single");
   setText("updatedAt", data.generated_at);
   setText("pathText", data.paths.log_dir);
+  setText("protectedDeviceCount", fmt(data.deployment?.protected_devices || 0));
 
   setText("riskScore", data.kpis.risk_score);
   setText("threats24", fmt(data.kpis.threats_24h));
@@ -712,7 +799,7 @@ function applyMetrics(data) {
   setText("unknownRate", `${data.kpis.unknown_rate_24h}%`);
   setText("topSource", data.kpis.top_source || "-");
   setText("llmErrors", `${data.kpis.llm_errors_24h} LLM errors`);
-  setText("routingText", data.api.routing_enabled ? "Router telemetry is enabled for model selection." : "Routing metadata unavailable.");
+  setText("routingText", data.api.routing_enabled ? "Model routing is enabled for flow triage." : "Single classifier selected by artifact path.");
 
   renderSystemPulse(data.activity || {}, data.api || {});
   drawTimeline("timelineChart", data.series.timeline || []);
@@ -780,8 +867,8 @@ async function refresh() {
     renderSystemPulse({
       state: "dead",
       label: "dead",
-      headline: "Telemetry link interrupted",
-      detail: "Dashboard could not load the metrics feed.",
+      headline: "Neural core offline",
+      detail: "Dashboard could not load the IDS metrics feed.",
     }, { online: false, status: "offline" });
     console.error(err);
   } finally {

@@ -146,8 +146,8 @@ class TestEventLogger:
         assert event["event"] == "attack_detected"
         assert event["prediction"]["label"] == "ddos_dos"
         assert event["prediction"]["confidence"] == 0.92
-        assert event["prediction"]["route"] == "original"
-        assert event["prediction"]["router_confidence"] == 0.81
+        assert "route" not in event["prediction"]
+        assert "router_confidence" not in event["prediction"]
         assert event["triage"]["label"] == "ddos_dos"
         assert event["triage"]["severity"] == "high"
         assert event["triage"]["incident_role"] == "primary"
@@ -400,6 +400,32 @@ class TestIncidentRules:
         assert all(d["triage"]["incident_role"] == "primary" for d in out)
         assert all(d["triage"]["source"] == "heuristic:scan-fanout" for d in out)
         assert any(t["id"] == "T1595" for t in out[0]["triage"]["mitre_techniques"])
+
+    def test_normal_client_web_dns_fanout_stays_normal(self):
+        """Verify that ordinary client web/DNS fanout is not promoted."""
+        detections = []
+        service_ports = [443, 53, 443, 80, 443, 853, 8443, 443, 53, 443]
+        for idx, port in enumerate(service_ports):
+            detections.append({
+                "prediction": {"predicted_label": "normal", "confidence": 1.0},
+                "triage": {
+                    "label": "normal",
+                    "severity": "low",
+                    "mitre_tactics": [],
+                    "mitre_techniques": [],
+                },
+                "flow_meta": {
+                    "src_ip": "192.168.0.102",
+                    "dst_ip": f"203.0.113.{idx + 10}",
+                    "src_port": 50000 + idx,
+                    "dst_port": port,
+                },
+            })
+
+        out = _apply_incident_rules(detections)
+
+        assert all(d["triage"]["label"] == "normal" for d in out)
+        assert all(d["triage"]["incident_primary_label"] == "unknown" for d in out)
 
     def test_scan_campaign_suppresses_secondary_labels(self):
         """Verify that scan campaign suppresses secondary labels."""

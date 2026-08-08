@@ -123,27 +123,27 @@ class TestTriageServiceFallback:
     """Group tests covering triage service fallback behavior."""
     def test_disabled_when_fallback_backend(self):
         """Verify that disabled when fallback backend."""
-        svc = TriageService(api_key=None, model="gemini-2.0-flash", timeout_seconds=10, triage_backend="fallback")
+        svc = TriageService(api_key=None, model="gemini-3.5-flash", timeout_seconds=10, triage_backend="fallback")
         assert svc.enabled is False
 
     def test_enabled_when_ollama_backend(self):
         """Verify that enabled when ollama backend."""
-        svc = TriageService(api_key=None, model="gemini-2.0-flash", timeout_seconds=10, triage_backend="ollama")
+        svc = TriageService(api_key=None, model="gemini-3.5-flash", timeout_seconds=10, triage_backend="ollama")
         assert svc.enabled is True
 
     def test_enabled_when_gemini_backend_with_key(self):
         """Verify that enabled when gemini backend with key."""
-        svc = TriageService(api_key="test-key", model="gemini-2.0-flash", timeout_seconds=10, triage_backend="gemini")
+        svc = TriageService(api_key="test-key", model="gemini-3.5-flash", timeout_seconds=10, triage_backend="gemini")
         assert svc.enabled is True
 
     def test_disabled_when_gemini_backend_without_key(self):
         """Verify that disabled when gemini backend without key."""
-        svc = TriageService(api_key=None, model="gemini-2.0-flash", timeout_seconds=10, triage_backend="gemini")
+        svc = TriageService(api_key=None, model="gemini-3.5-flash", timeout_seconds=10, triage_backend="gemini")
         assert svc.enabled is False
 
     def test_fallback_triage_for_single_prediction(self):
         """Verify that fallback triage for single prediction."""
-        svc = TriageService(api_key=None, model="gemini-2.0-flash", timeout_seconds=10, triage_backend="fallback")
+        svc = TriageService(api_key=None, model="gemini-3.5-flash", timeout_seconds=10, triage_backend="fallback")
         predictions = [{"predicted_label": "password", "confidence": 0.88}]
         records = [{"duration": 1, "src_bytes": 0, "dst_bytes": 0, "proto": "tcp"}]
         triage, llm_error = svc.triage_predictions(predictions=predictions, records=records, context=None)
@@ -154,7 +154,7 @@ class TestTriageServiceFallback:
 
     def test_fallback_triage_batch(self):
         """Verify that fallback triage batch."""
-        svc = TriageService(api_key=None, model="gemini-2.0-flash", timeout_seconds=10, triage_backend="fallback")
+        svc = TriageService(api_key=None, model="gemini-3.5-flash", timeout_seconds=10, triage_backend="fallback")
         predictions = [
             {"predicted_label": "normal", "confidence": 0.99},
             {"predicted_label": "ddos_dos", "confidence": 0.91},
@@ -166,6 +166,72 @@ class TestTriageServiceFallback:
         assert triage[0]["severity"] == "low"
         assert triage[1]["severity"] == "high"
         assert triage[2]["severity"] == "review"
+
+
+class TestGeminiTriage:
+    """Group tests covering Gemini REST triage behavior."""
+    def test_api_key_is_sent_as_header_not_url_query(self):
+        """Verify that Gemini API keys are not placed in request URLs."""
+        svc = TriageService(
+            api_key="secret-key",
+            model="gemini-3.5-flash",
+            timeout_seconds=7,
+            triage_backend="gemini",
+        )
+        captured = {}
+        body = {
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [
+                            {
+                                "text": json.dumps({
+                                    "label": "scanning",
+                                    "severity": "medium",
+                                    "mitre_tactics": ["Reconnaissance"],
+                                    "mitre_techniques": [],
+                                    "summary": "Possible scan.",
+                                    "next_actions": ["Validate scanner ownership."],
+                                    "confidence_note": "LLM reviewed.",
+                                }),
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+
+        class FakeResponse:
+            """Minimal context manager returned by urlopen."""
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_exc):
+                return False
+
+            def read(self):
+                return json.dumps(body).encode("utf-8")
+
+        def fake_urlopen(req, timeout):
+            """Capture the generated request without making a network call."""
+            captured["request"] = req
+            captured["timeout"] = timeout
+            return FakeResponse()
+
+        with patch("app.triage.urllib.request.urlopen", side_effect=fake_urlopen):
+            triage = svc._gemini_triage(
+                prediction={"predicted_label": "scanning", "confidence": 0.81},
+                record={"proto": "tcp"},
+                context=None,
+            )
+
+        request = captured["request"]
+        assert captured["timeout"] == 7
+        assert request.full_url.endswith("/models/gemini-3.5-flash:generateContent")
+        assert "secret-key" not in request.full_url
+        assert request.get_header("X-goog-api-key") == "secret-key"
+        assert triage["source"] == "gemini"
+        assert triage["label"] == "scanning"
 
 
 # -- Ollama backend (mocked) ---------------------------------
@@ -187,7 +253,7 @@ def _make_ollama_svc(**overrides):
     """Build a TriageService configured for mocked Ollama calls."""
     defaults = dict(
         api_key=None,
-        model="gemini-2.0-flash",
+        model="gemini-3.5-flash",
         timeout_seconds=30,
         triage_backend="ollama",
         ollama_base_url="http://127.0.0.1:11434",

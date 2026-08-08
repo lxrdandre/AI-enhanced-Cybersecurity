@@ -5,20 +5,20 @@ Wants=ids-api.service
 
 [Service]
 Type=simple
-User=adrian
-WorkingDirectory=/data/ton-iot-project/fresh_start
-Environment="PATH=/data/ton-iot-project/venv_h200/bin:/usr/local/bin:/usr/bin"
-Environment="TON_IOT_PROJECT_ROOT=/data/ton-iot-project/fresh_start"
+User=ton-iot
+WorkingDirectory=/opt/ton-iot-ips
+Environment="PATH=/opt/ton-iot-ips/.venv/bin:/usr/local/bin:/usr/bin"
+Environment="TON_IOT_PROJECT_ROOT=/opt/ton-iot-ips"
 Environment="TON_IOT_DASHBOARD_HOST=0.0.0.0"
 Environment="TON_IOT_DASHBOARD_PORT=5000"
 Environment="TON_IOT_DASHBOARD_API_URL=http://127.0.0.1:8000"
-Environment="TON_IOT_DASHBOARD_LOG_DIR=/data/ton-iot-project/fresh_start/logs"
-Environment="TON_IOT_DASHBOARD_THREAT_DB=/data/ton-iot-project/fresh_start/data/threat_cache.db"
-Environment="TON_IOT_DASHBOARD_PROTECTED_IPS=100.111.77.70"
-Environment="TON_IOT_DASHBOARD_PROTECTED_IPS_FILE=/data/ton-iot-project/fresh_start/data/protected_ips.json"
-Environment="TON_IOT_DASHBOARD_FIREWALL_QUEUE=/data/ton-iot-project/fresh_start/data/firewall_requests.json"
-EnvironmentFile=-/data/ton-iot-project/fresh_start/.env
-ExecStart=/data/ton-iot-project/venv_h200/bin/python -m dashboard.app
+Environment="TON_IOT_DASHBOARD_LOG_DIR=/opt/ton-iot-ips/logs"
+Environment="TON_IOT_DASHBOARD_THREAT_DB=/opt/ton-iot-ips/data/threat_cache.db"
+Environment="TON_IOT_DASHBOARD_PROTECTED_IPS=192.168.56.20"
+Environment="TON_IOT_DASHBOARD_PROTECTED_IPS_FILE=/opt/ton-iot-ips/data/protected_ips.json"
+Environment="TON_IOT_DASHBOARD_FIREWALL_QUEUE=/opt/ton-iot-ips/data/firewall_requests.json"
+EnvironmentFile=-/opt/ton-iot-ips/.env
+ExecStart=/opt/ton-iot-ips/.venv/bin/python -m dashboard.app
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal

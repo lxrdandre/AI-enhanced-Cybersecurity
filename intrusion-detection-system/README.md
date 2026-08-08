@@ -1,10 +1,10 @@
 Video of current functionalities - https://youtu.be/PqMEY2Pppp0
 
-# TON IoT IPS - Deployable Inference Service + ClawdBot SOC Agent
+# AI-Enhanced Network IPS - SE-DWNet Inference + ClawdBot SOC Agent
 
-Network intrusion detection system built on SE-DWNet/ResNet with a FastAPI inference API, tiered local LLM triage (Ollama), autonomous SOC response agent (ClawdBot via OpenClaw), and Telegram alerting.
+Network intrusion detection and prevention system built on SE-DWNet/ResNet, with a FastAPI inference API, tiered local LLM triage through Ollama, a repository-native ClawdBot SOC agent, optional nftables active response, threat-intelligence enrichment, Telegram alerting, and a live dashboard.
 
-**Hardware:** NVIDIA H200 (141 GB HBM3e), 40 GB RAM, 1 TB disk
+**Reference deployment hardware:** NVIDIA H200 (141 GB HBM3e), 40 GB RAM, 1 TB disk
 
 ---
 
@@ -14,19 +14,18 @@ Network intrusion detection system built on SE-DWNet/ResNet with a FastAPI infer
 2. [Prerequisites](#prerequisites)
 3. [Step 1 - Python environment & IDS API](#step-1--python-environment--ids-api)
 4. [Step 2 - Ollama (local LLM)](#step-2--ollama-local-llm)
-5. [Step 3 - OpenClaw + ClawdBot](#step-3--openclaw--clawdbot)
-6. [Step 4 - Telegram bot](#step-4--telegram-bot)
-7. [Step 5 - ClawdBot capture agent](#step-5--clawdbot-capture-agent)
-8. [Step 6 - Start everything](#step-6--start-everything)
-9. [Step 7 - Live Dashboard](#step-7--live-dashboard)
-10. [Systemd deployment](#systemd-deployment)
-11. [Restarting services](#restarting-services)
-12. [Environment variables reference](#environment-variables-reference)
-13. [API endpoints](#api-endpoints)
-14. [Tiered LLM escalation](#tiered-llm-escalation)
-15. [Telegram alert format](#telegram-alert-format)
-16. [Running tests](#running-tests)
-17. [LLM model recommendation](#llm-model-recommendation)
+5. [Step 3 - Telegram bot](#step-3--telegram-bot)
+6. [Step 4 - ClawdBot SOC agent](#step-4--clawdbot-soc-agent)
+7. [Step 5 - Start everything](#step-5--start-everything)
+8. [Step 6 - Live Dashboard](#step-6--live-dashboard)
+9. [Systemd deployment](#systemd-deployment)
+10. [Restarting services](#restarting-services)
+11. [Environment variables reference](#environment-variables-reference)
+12. [API endpoints](#api-endpoints)
+13. [Tiered LLM escalation](#tiered-llm-escalation)
+14. [Telegram alert format](#telegram-alert-format)
+15. [Running tests](#running-tests)
+16. [LLM model recommendation](#llm-model-recommendation)
 
 ---
 
@@ -37,8 +36,8 @@ Network intrusion detection system built on SE-DWNet/ResNet with a FastAPI infer
           |
           v
    +--------------+
-   |  ClawdBot     |  <- capture agent (python -m clawdbot)
-   |  Agent        |     sniffs packets -> aggregates flows
+   |  ClawdBot     |  <- built-in SOC agent (python -m clawdbot)
+   |  Agent        |     captures, aggregates, correlates, and responds
    +------+-------+
           | POST /analyze (batch of flow records)
           v
@@ -57,7 +56,7 @@ Network intrusion detection system built on SE-DWNet/ResNet with a FastAPI infer
   Tier-1 LLM  Telegram Bot
   + Tier-2     SOC alerts
 
-  Tier-1: mistral-small:24b   (fast, every alert)
+  Tier-1: clawdbot-triage     (fine-tuned Mistral Small 24B, every alert)
   Tier-2: llama3.1:70b        (escalation only)
 ```
 
@@ -70,7 +69,6 @@ Network intrusion detection system built on SE-DWNet/ResNet with a FastAPI infer
 | Python 3.10+ | With venv |
 | NVIDIA GPU + CUDA | H200 or compatible |
 | Ollama | Local LLM server |
-| OpenClaw | ClawdBot orchestrator |
 | Telegram account | For SOC alerts |
 
 ---
@@ -88,9 +86,12 @@ source venv_h200/bin/activate
 # Install dependencies
 pip install -r requirements.txt
 
+# Supply a reviewed model bundle (generated artifacts are not stored in Git)
+# See artifacts/README.md for the required files.
+
 # Set project root
 export TON_IOT_PROJECT_ROOT=$(pwd)
-export TON_IOT_ARTIFACT_DIR=$(pwd)/artifacts/resnet_transfer_7class
+export TON_IOT_ARTIFACT_DIR=$(pwd)/artifacts/se_dwnet_edge_iiotset_random_holdout
 
 # Start the API
 uvicorn app.main:app --host 0.0.0.0 --port 8000
@@ -112,12 +113,14 @@ curl -fsSL https://ollama.com/install.sh | sh
 ### Pull models
 
 ```bash
-# Tier-1: fast model for every alert (~26 GB VRAM)
+# Tier-1 base model (~26 GB VRAM)
 ollama pull mistral-small:24b
 
 # Tier-2: escalation model for ambiguous/critical cases (~75 GB VRAM)
 ollama pull llama3.1:70b-instruct-q8_0
 ```
+
+ClawdBot defaults to the repository's fine-tuned Tier-1 model, registered locally as `clawdbot-triage`. Train and export it with the scripts under `lora/`. Until that model is registered, set `OLLAMA_MODEL_TIER1=mistral-small:24b` to use the base model directly.
 
 ### Start Ollama
 
@@ -148,88 +151,14 @@ ollama run mistral-small:24b "Respond with only: OK"
 ```bash
 export TON_IOT_TRIAGE_BACKEND=ollama
 export OLLAMA_BASE_URL=http://127.0.0.1:11434
-export OLLAMA_MODEL_TIER1=mistral-small:24b
+export OLLAMA_MODEL_TIER1=clawdbot-triage
 export OLLAMA_MODEL_TIER2=llama3.1:70b-instruct-q8_0
 export OLLAMA_ESCALATION_CONFIDENCE=0.75
 ```
 
 ---
 
-## Step 3 - OpenClaw + ClawdBot
-
-### Install OpenClaw
-
-Follow the [OpenClaw installation guide](https://openclaw.dev) for your system.
-
-### Configure OpenClaw to use local Ollama
-
-The OpenClaw CLI validates provider config as a whole block - individual field sets will fail validation. Use this Python script to patch the config correctly:
-
-```bash
-cat << 'PATCH_EOF' > patch_claw.py
-import json
-
-conf_path = "/home/adrian/.openclaw/openclaw.json"
-
-with open(conf_path, 'r') as f:
-    data = json.load(f)
-
-# Add Ollama auth profile
-data['auth']['profiles']['ollama:default'] = {
-    "provider": "ollama",
-    "mode": "api_key"
-}
-
-# Add Ollama provider with models
-# Uses /v1 for OpenAI-compatible API layer
-data['models']['providers']['ollama'] = {
-    "baseUrl": "http://127.0.0.1:11434/v1",
-    "api": "openai-completions",
-    "apiKey": "ollama-local",
-    "models": [
-        {
-            "id": "mistral-small:24b",
-            "name": "Local Mistral Small 24B",
-            "reasoning": False,
-            "input": ["text"],
-            "contextWindow": 32768,
-            "maxTokens": 8192
-        },
-        {
-            "id": "llama3.1:70b-instruct-q8_0",
-            "name": "Local Llama 3.1 70B",
-            "reasoning": False,
-            "input": ["text"],
-            "contextWindow": 131072,
-            "maxTokens": 8192
-        }
-    ]
-}
-
-# Set primary agent model + fallback
-data['agents']['defaults']['model']['primary'] = "ollama/mistral-small:24b"
-data['agents']['defaults']['model']['fallbacks'] = ["ollama/llama3.1:70b-instruct-q8_0"]
-
-with open(conf_path, 'w') as f:
-    json.dump(data, f, indent=2)
-
-print("OpenClaw config updated for local Ollama.")
-PATCH_EOF
-
-python3 patch_claw.py
-```
-
-> **Why a script instead of `openclaw config set`?** OpenClaw validates the entire provider block on each set command. Setting fields individually (baseUrl, apiKey, models) fails because the incomplete block doesn't pass validation. The script writes the full block atomically.
-
-### Start OpenClaw gateway
-
-```bash
-openclaw gateway
-```
-
----
-
-## Step 4 - Telegram bot
+## Step 3 - Telegram bot
 
 ### Create the bot
 
@@ -253,9 +182,9 @@ export TELEGRAM_CHAT_ID="-100xxxxxxxxxx"
 
 ---
 
-## Step 5 - ClawdBot capture agent
+## Step 4 - ClawdBot SOC agent
 
-The capture agent sniffs live LAN traffic with scapy, aggregates packets into flow records, POSTs them to the IDS API `/analyze` endpoint, and sends Telegram alerts for detected attacks.
+ClawdBot is implemented in this repository under `clawdbot/` and runs directly with `python -m clawdbot`. It captures live traffic with Scapy, aggregates packets into flows, submits batches to the IDS API, applies incident-level correlation and delayed LLM double-checks, enriches attacker IPs with cached threat intelligence, records JSONL attack and action events, optionally manages an nftables blocklist, and sends cooldown-aware Telegram incident summaries.
 
 ### Run manually
 
@@ -280,14 +209,14 @@ sudo -E python -m clawdbot
 | `CLAWDBOT_INTERFACE` | **(required)** | Network interface (e.g. `eth0`, `ens18`) |
 | `CLAWDBOT_BPF_FILTER` | `ip` | BPF filter for scapy (e.g. `tcp port 80`) |
 | `CLAWDBOT_API_URL` | `http://127.0.0.1:8000` | IDS API base URL |
-| `CLAWDBOT_API_TIMEOUT` | `30` | API request timeout (seconds) |
+| `CLAWDBOT_API_TIMEOUT` | `60` | API request timeout (seconds) |
 | `CLAWDBOT_HARVEST_INTERVAL` | `10` | Seconds between flow harvests |
 | `CLAWDBOT_SEVERITY_THRESHOLD` | `medium` | Min severity to send Telegram alerts |
 | `LOG_LEVEL` | `INFO` | Python logging level |
 
 ---
 
-## Step 6 - Start everything
+## Step 5 - Start everything
 
 Start all services in this order:
 
@@ -298,27 +227,24 @@ ollama serve &
 # 2. IDS API
 source venv_h200/bin/activate
 export TON_IOT_PROJECT_ROOT=$(pwd)
-export TON_IOT_ARTIFACT_DIR=$(pwd)/artifacts/resnet_transfer_7class
+export TON_IOT_ARTIFACT_DIR=$(pwd)/artifacts/se_dwnet_edge_iiotset_random_holdout
 export TON_IOT_TRIAGE_BACKEND=ollama
 uvicorn app.main:app --host 0.0.0.0 --port 8000 &
 
-# 3. OpenClaw gateway (ClawdBot)
-openclaw gateway &
-
-# 4. ClawdBot capture agent (needs root for raw sockets)
+# 3. ClawdBot SOC agent (needs root or CAP_NET_RAW for packet capture)
 export CLAWDBOT_INTERFACE=eth0
 export TELEGRAM_BOT_TOKEN="your-token"
 export TELEGRAM_CHAT_ID="your-chat-id"
 sudo -E python -m clawdbot &
 
-# 5. Verify all services
+# 4. Verify the API and Ollama
 curl http://127.0.0.1:8000/health          # IDS API
 curl http://127.0.0.1:11434/api/tags       # Ollama
 ```
 
 ---
 
-## Step 7 - Live Dashboard
+## Step 6 - Live Dashboard
 
 The Flask dashboard reads ClawdBot event logs and IDS audit logs, then refreshes SOC metrics in the browser every few seconds. It loads Chart.js and Google Fonts from public CDNs for the live charts and typography.
 
@@ -354,7 +280,7 @@ The Incident Stream marks whether a detection was sent to Telegram. Use the `Ope
 For production, use the systemd unit files in `deploy/`:
 
 ```bash
-# Install and start all services (run on the SVM as root)
+# Install and start all services after customising the unit paths/users
 sudo bash deploy/install.sh
 ```
 
@@ -362,9 +288,9 @@ This installs three services:
 
 | Service | Description | User |
 |---------|-------------|------|
-| `ids-api` | Uvicorn IDS API on port 8000 | `adrian` |
+| `ids-api` | Uvicorn IDS API on port 8000 | `ton-iot` |
 | `clawdbot-agent` | Capture agent (needs `CAP_NET_RAW`) | `root` |
-| `ids-dashboard` | Flask live dashboard on port 5000 | `adrian` |
+| `ids-dashboard` | Flask live dashboard on port 5000 | `ton-iot` |
 
 ### Customise before installing
 
@@ -375,11 +301,11 @@ Edit the unit files in `deploy/` to match your paths:
 # deploy/clawdbot-agent.service - adjust CLAWDBOT_INTERFACE, paths
 
 # For Telegram credentials, create a .env file:
-cat > /home/adrian/fresh_start/.env << 'EOF'
+cat > /opt/ton-iot-ips/.env << 'EOF'
 TELEGRAM_BOT_TOKEN=7123456789:AAHxxxxxx
 TELEGRAM_CHAT_ID=-100xxxxxxxxxx
 EOF
-chmod 600 /home/adrian/fresh_start/.env
+chmod 600 /opt/ton-iot-ips/.env
 ```
 
 ### Management commands
@@ -418,27 +344,17 @@ pkill -f "uvicorn app.main:app"
 uvicorn app.main:app --host 0.0.0.0 --port 8000 &
 ```
 
-### Restart OpenClaw gateway
+### Restart ClawdBot agent
 
 ```bash
-openclaw gateway restart
-# if that fails (systemd user scope issue):
-export XDG_RUNTIME_DIR="/run/user/$(id -u)"
-openclaw gateway restart
-# or kill and restart manually:
-pkill -f "openclaw gateway" && openclaw gateway &
+sudo systemctl restart clawdbot-agent
 ```
 
 ### Restart everything
 
 ```bash
 sudo systemctl restart ollama
-pkill -f "uvicorn app.main:app"
-pkill -f "openclaw gateway"
-sleep 2
-source venv_h200/bin/activate
-uvicorn app.main:app --host 0.0.0.0 --port 8000 &
-openclaw gateway &
+sudo systemctl restart ids-api clawdbot-agent ids-dashboard
 ```
 
 ---
@@ -450,8 +366,8 @@ openclaw gateway &
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `TON_IOT_PROJECT_ROOT` | auto-detected | Project root directory |
-| `TON_IOT_ARTIFACT_DIR` | `$ROOT/artifacts/resnet_transfer_7class` | Model artifacts path |
-| `TON_IOT_MODEL_FILENAME` | `resnet_transfer_model_7class.keras` | Keras model file |
+| `TON_IOT_ARTIFACT_DIR` | `$ROOT/artifacts/se_dwnet_edge_iiotset_random_holdout` | Model artifacts path |
+| `TON_IOT_MODEL_FILENAME` | `se_dwnet_model.keras` | Keras model file |
 | `TON_IOT_PIPELINE_FILENAME` | `preprocessing_pipeline.pkl` | Preprocessing pipeline |
 | `TON_IOT_FEATURES_FILENAME` | `final_features.txt` | Feature list |
 | `TON_IOT_API_HOST` | `0.0.0.0` | API bind host |
@@ -469,7 +385,7 @@ openclaw gateway &
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Ollama server URL |
-| `OLLAMA_MODEL_TIER1` | `mistral-small:24b` | Fast model (every alert) |
+| `OLLAMA_MODEL_TIER1` | `clawdbot-triage` | Fine-tuned fast model (every alert) |
 | `OLLAMA_MODEL_TIER2` | `llama3.1:70b-instruct-q8_0` | Escalation model |
 | `OLLAMA_ESCALATION_CONFIDENCE` | `0.75` | Escalate below this confidence |
 
@@ -478,7 +394,7 @@ openclaw gateway &
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `GEMINI_API_KEY` | None | Google API key (required if backend=gemini) |
-| `TON_IOT_TRIAGE_MODEL` | `gemini-2.0-flash` | Gemini model name |
+| `TON_IOT_TRIAGE_MODEL` | `gemini-3.5-flash` | Gemini model name |
 
 ### Telegram
 
@@ -487,19 +403,19 @@ openclaw gateway &
 | `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather |
 | `TELEGRAM_CHAT_ID` | Target chat/group ID |
 
-### ClawdBot capture agent
+### ClawdBot SOC agent
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `CLAWDBOT_INTERFACE` | **(required)** | Network interface to sniff |
 | `CLAWDBOT_BPF_FILTER` | `ip` | BPF packet filter |
 | `CLAWDBOT_API_URL` | `http://127.0.0.1:8000` | IDS API base URL |
-| `CLAWDBOT_API_TIMEOUT` | `30` | API request timeout (s) |
+| `CLAWDBOT_API_TIMEOUT` | `60` | API request timeout (s) |
 | `CLAWDBOT_HARVEST_INTERVAL` | `10` | Seconds between flow harvests |
 | `CLAWDBOT_SEVERITY_THRESHOLD` | `medium` | Min severity for Telegram alerts |
-| `CLAWDBOT_LOG_DIR` | `/data/ton-iot-project/fresh_start/logs` | Attack + action event logs |
+| `CLAWDBOT_LOG_DIR` | `$ROOT/logs` | Attack + action event logs |
 | `CLAWDBOT_IGNORE_PORTS` | `22,64295,5000,8000` | Management ports ignored between whitelisted peers before IDS analysis |
-| `CLAWDBOT_PROTECTED_IPS` | `100.111.77.70` | Comma-separated protected/server IPs used to normalize attacker -> target roles and exclude server IPs from reputation history |
+| `CLAWDBOT_PROTECTED_IPS` | empty | Comma-separated protected/server IPs used to normalize attacker -> target roles and exclude server IPs from reputation history |
 | `CLAWDBOT_PROTECTED_IPS_FILE` | `$ROOT/data/protected_ips.json` | Dashboard-managed protected IP list reloaded by the agent |
 | `CLAWDBOT_FIREWALL_QUEUE` | `$ROOT/data/firewall_requests.json` | Dashboard firewall request queue consumed by the root agent |
 | `LOG_LEVEL` | `INFO` | Agent log level |
@@ -516,7 +432,7 @@ openclaw gateway &
 | `TON_IOT_DASHBOARD_THREAT_DB` | `$ROOT/data/threat_cache.db` | SQLite threat-intelligence cache displayed on the IP Intel page |
 | `TON_IOT_DASHBOARD_REFRESH_SECONDS` | `5` | Browser polling interval |
 | `TON_IOT_DASHBOARD_IGNORE_PORTS` | `22,64295,5000,8000` | Ports hidden from dashboard metrics; set to `none` to disable |
-| `TON_IOT_DASHBOARD_PROTECTED_IPS` | `$CLAWDBOT_PROTECTED_IPS` or `100.111.77.70` | Comma-separated protected/server IPs used for Top Originators/Top Targets role normalization and IP Intel filtering |
+| `TON_IOT_DASHBOARD_PROTECTED_IPS` | `$CLAWDBOT_PROTECTED_IPS` or empty | Comma-separated protected/server IPs used for Top Originators/Top Targets role normalization and IP Intel filtering |
 | `TON_IOT_DASHBOARD_PROTECTED_IPS_FILE` | `$ROOT/data/protected_ips.json` | Editable protected IP list used by the dashboard and agent |
 | `TON_IOT_DASHBOARD_FIREWALL_QUEUE` | `$ROOT/data/firewall_requests.json` | Dashboard queue for manual block/unblock requests |
 
@@ -567,7 +483,7 @@ openclaw gateway &
 }
 ```
 
-Required fields per record: `duration` (numeric >= 0), `src_bytes` (numeric >= 0), `dst_bytes` (numeric >= 0), `proto` (string).
+Required fields depend on the selected preprocessing bundle. Query `/metadata` for `required_fields` and `available_fields`; when present, `duration`, `src_bytes`, and `dst_bytes` must be non-negative numbers and `proto` must be a string.
 
 ---
 
@@ -577,7 +493,7 @@ The triage service uses a two-tier architecture:
 
 | Tier | Model | VRAM | Speed | When |
 |------|-------|------|-------|------|
-| **Tier-1** | `mistral-small:24b` | ~26 GB | ~100 tok/s | Every non-normal prediction |
+| **Tier-1** | `clawdbot-triage` (fine-tuned Mistral Small 24B) | ~26 GB | ~100 tok/s | Every non-normal prediction |
 | **Tier-2** | `llama3.1:70b-instruct-q8_0` | ~75 GB | ~40 tok/s | Escalation only |
 
 **Escalation triggers** (automatic):
@@ -600,9 +516,9 @@ The triage service uses a two-tier architecture:
 Detection context
   Classifier label: ddos_dos
   Confidence: 0.923
-  Model route: live_cic (0.881)
+  Model: se_dwnet_edge_iiotset_random_holdout
   Confidence note: Model confidence is high.
-  Triage source: ollama:mistral-small:24b
+  Triage source: ollama:clawdbot-triage
 
 Flow
   TCP 192.168.1.105:51544 -> 10.0.0.1:443
@@ -642,15 +558,14 @@ Next actions:
 ## Running tests
 
 ```bash
+# Install the test runner if it is not already available
+python -m pip install pytest
+
 # Run the full test suite
 python -m pytest tests/ -v
 
 # Run specific test module
 python -m pytest tests/test_triage.py -v
-
-# Smoke test against a running API
-python helper/smoke_test_api.py
-python helper/smoke_test_api.py --base-url http://SERVER_IP:8000
 ```
 
 ---
@@ -661,7 +576,7 @@ python helper/smoke_test_api.py --base-url http://SERVER_IP:8000
 
 | Aspect | Detail |
 |--------|--------|
-| **Model** | `mistral-small:24b` (instruction-tuned) |
+| **Model** | `clawdbot-triage` (fine-tuned from Mistral Small 24B) |
 | **VRAM (Q8)** | ~26 GB |
 | **Speed on H200** | ~80-120 tok/s |
 | **Context window** | 128K tokens |

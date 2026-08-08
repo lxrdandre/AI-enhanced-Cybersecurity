@@ -1,4 +1,4 @@
-"""Validate a labelled CSV with the saved Edge-IIoTset 6-class ResNet artifact.
+"""Validate a labelled CSV with the saved Edge-IIoTset 6-class SE-DWNet artifact.
 
 The expected target taxonomy is:
 
@@ -14,7 +14,7 @@ Example
 -------
     python resnet/validate_edge_iiotset_dataset.py \
         --csv /data/datasets/my_new_dataset.csv \
-        --model-dir /data/ton-iot-project/fresh_start/artifacts/resnet_edge_iiotset_random_holdout \
+        --model-dir /data/ton-iot-project/fresh_start/artifacts/se_dwnet_edge_iiotset_random_holdout \
         --dataset-name my_new_dataset
 """
 
@@ -191,6 +191,7 @@ def _find_model_dir(project_root: str, explicit: str | None) -> str:
         return os.path.abspath(explicit)
 
     candidates = [
+        os.path.join(project_root, "artifacts", "se_dwnet_edge_iiotset_random_holdout"),
         os.path.join(project_root, "artifacts", "resnet_edge_iiotset_random_holdout"),
         os.path.join(project_root, "artifacts", "resnet_edge_iiotset_sensor_temporal"),
         os.path.join(project_root, "artifacts", "resnet_edge_iiotset_temporal"),
@@ -226,9 +227,12 @@ def _load_final_features(model_dir: str, pipeline: dict) -> list[str]:
 
 def _pick_model_file(model_dir: str) -> str:
     """Select the Keras model file to validate."""
-    preferred = os.path.join(model_dir, "resnet_model.keras")
+    preferred = os.path.join(model_dir, "se_dwnet_model.keras")
     if os.path.exists(preferred):
         return preferred
+    legacy = os.path.join(model_dir, "resnet_model.keras")
+    if os.path.exists(legacy):
+        return legacy
     model_files = sorted(glob.glob(os.path.join(model_dir, "*.keras")))
     if not model_files:
         raise FileNotFoundError(f"No .keras model found in {model_dir}")
@@ -451,7 +455,7 @@ def validate(
     model_path = _pick_model_file(model_dir)
     pipeline_path = _pick_pipeline_file(model_dir)
 
-    print("=== Edge-IIoTset 6-Class External Validation ===")
+    print("=== SE-DWNet Edge-IIoTset 6-Class External Validation ===")
     print(f"Dataset:    {dataset_name}")
     print(f"CSV:        {csv_path}")
     print(f"Model dir:  {model_dir}")

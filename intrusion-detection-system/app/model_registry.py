@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import pickle
 import sys
+from pathlib import Path
 
 import tensorflow as tf
 
@@ -57,6 +58,51 @@ def _load_features_from_text(path: str) -> list[str]:
     return [feature for feature in features if feature]
 
 
+def _dedupe_paths(paths: list[str]) -> list[str]:
+    """Return paths in order without duplicates."""
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for path in paths:
+        normalized = os.path.abspath(path)
+        if normalized in seen:
+            continue
+        ordered.append(path)
+        seen.add(normalized)
+    return ordered
+
+
+def _resolve_model_path(artifact_dir: str, preferred_filename: str) -> str:
+    """Resolve the model file/directory for any supported artifact family."""
+    preferred_filename = (preferred_filename or "").strip()
+    candidates: list[str] = []
+    if preferred_filename:
+        candidates.append(os.path.join(artifact_dir, preferred_filename))
+
+    for name in (
+        "se_dwnet_model.keras",
+        "se_dwnet_zeek_model.keras",
+        "resnet_model.keras",
+        "model.keras",
+        "saved_model",
+        "se_dwnet_saved_model",
+        "resnet_saved_model",
+    ):
+        candidates.append(os.path.join(artifact_dir, name))
+
+    for path in _dedupe_paths(candidates):
+        if os.path.exists(path):
+            return path
+
+    keras_files = sorted(Path(artifact_dir).glob("*.keras"))
+    if keras_files:
+        return str(keras_files[0])
+
+    raise FileNotFoundError(
+        "Model file not found in artifact directory. Tried: "
+        + ", ".join(os.path.basename(path) for path in _dedupe_paths(candidates))
+    )
+
+
 def load_artifacts(
     *,
     artifact_dir: str,
@@ -66,13 +112,11 @@ def load_artifacts(
     calibration_filename: str = "calibration.pkl",
 ) -> tuple[tf.keras.Model, dict, list[str], dict | None]:
     """Load model, preprocessing, and metadata artifacts for inference."""
-    model_path = os.path.join(artifact_dir, model_filename)
+    model_path = _resolve_model_path(artifact_dir, model_filename)
     pipeline_path = os.path.join(artifact_dir, pipeline_filename)
     features_path = os.path.join(artifact_dir, features_filename)
     calibration_path = os.path.join(artifact_dir, calibration_filename)
 
-    if not os.path.exists(model_path):
-        raise FileNotFoundError(f"Model file not found: {model_path}")
     if not os.path.exists(pipeline_path):
         raise FileNotFoundError(f"Pipeline file not found: {pipeline_path}")
 

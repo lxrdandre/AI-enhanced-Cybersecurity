@@ -5,19 +5,19 @@ Wants=ollama.service
 
 [Service]
 Type=simple
-User=adrian
-WorkingDirectory=/data/ton-iot-project/fresh_start
-Environment="PATH=/data/ton-iot-project/venv_h200/bin:/usr/local/bin:/usr/bin"
-Environment="TON_IOT_PROJECT_ROOT=/data/ton-iot-project/fresh_start"
-Environment="TON_IOT_ARTIFACT_DIR=/data/ton-iot-project/fresh_start/artifacts/resnet_cic_public"
-Environment="TON_IOT_MODEL_FILENAME=resnet_model.keras"
+User=ton-iot
+WorkingDirectory=/opt/ton-iot-ips
+Environment="PATH=/opt/ton-iot-ips/.venv/bin:/usr/local/bin:/usr/bin"
+Environment="TON_IOT_PROJECT_ROOT=/opt/ton-iot-ips"
+Environment="TON_IOT_ARTIFACT_DIR=/opt/ton-iot-ips/artifacts/se_dwnet_edge_iiotset_random_holdout"
+Environment="TON_IOT_MODEL_FILENAME=se_dwnet_model.keras"
 Environment="TON_IOT_TRIAGE_BACKEND=ollama"
 Environment="OLLAMA_BASE_URL=http://127.0.0.1:11434"
 Environment="OLLAMA_MODEL_TIER1=clawdbot-triage"
 Environment="OLLAMA_MODEL_TIER2=llama3.1:70b-instruct-q8_0"
 Environment="TON_IOT_TRIAGE_TIMEOUT_SECONDS=60"
-EnvironmentFile=-/data/ton-iot-project/fresh_start/.env
-ExecStart=/data/ton-iot-project/venv_h200/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+EnvironmentFile=-/opt/ton-iot-ips/.env
+ExecStart=/opt/ton-iot-ips/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
